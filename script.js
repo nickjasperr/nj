@@ -252,6 +252,16 @@
        passed straight on to the page, so the page scrolls exactly the same
        as everywhere else.
     ================================================================ */
+    // The < > arrow artwork lives here once. Every .arrow button gets it (the < is the same svg, mirrored in CSS).
+    const ARROW_SVG = `<svg viewBox="0 0 67.733334 67.733333" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <circle class="svg-elem-1" cx="33.866665" cy="33.866665" r="33.866665" />
+        <g fill="none" stroke="#fff" stroke-width="4.23333" stroke-linecap="round">
+            <path class="svg-elem-2" stroke-linejoin="round" transform="rotate(138.18968)" d="M 22.73506,-47.820499 A 25.400002,25.400002 0 0 1 -0.22945281,-22.537531" />
+            <path class="svg-elem-3" stroke-linejoin="miter" d="M 15.337307,16.493613 57.150003,33.866669 14.934624,50.800001" />
+        </g>
+    </svg>`;
+    for (const b of document.querySelectorAll('.arrow')) b.innerHTML = ARROW_SVG;
+
     const carousels = Array.from(document.querySelectorAll('[data-carousel]')).map((root) => {
         const scroller = root.querySelector('.scroller');
         const track = root.querySelector('.track');
@@ -294,6 +304,8 @@
             const max = scroller.scrollWidth - scroller.clientWidth;
             prev.disabled = scroller.scrollLeft <= 1;
             next.disabled = scroller.scrollLeft >= max - 1;
+            if (!prev.disabled) prev.classList.add('seen');   // the "out" animation only plays after an arrow has been shown once
+            if (!next.disabled) next.classList.add('seen');
             root.classList.toggle('no-scroll', prev.disabled && next.disabled);
             hoverDirty = true;
         };
@@ -389,14 +401,99 @@
     }
     requestAnimationFrame(tick);
 
-        /* ================================================================
-       PROGRESSIVE COVERS
-       64px (in the HTML) -> 256px -> full size.
-       Each upgrade is loaded + decoded off-screen first, and only swapped
-       into the <img> once it's ready, so you never see a blank or a reload.
-       A stage only starts once every image has finished the previous one.
-       If a file is missing/fails, that image just keeps its current version.
-    ================================================================ */
+    /* ================================================================
+   PAGE OVERLAY
+   Click an album -> snap to top, overlay appears instantly, X draws in.
+   Click X (or Esc) -> X un-draws + fades (0.9s), overlay fades (0.5s, in style.css),
+   and the homepage is scrollable again straight away.
+================================================================ */
+    const overlay = document.getElementById('page-overlay');
+    const closeBtn = document.getElementById('page-close');
+    const closeSvg = closeBtn.querySelector('svg');
+    const htmlEl = document.documentElement;
+    let pageState = 'closed';   // closed | open
+
+    // hover rotation of the X: after it triggers, the opposite trigger waits 0.1s
+    // (then applies, if the mouse is still in that state)
+    const HOVER_LOCK = 100;
+    let rotWant = false, rotOn = false, rotLocked = false, rotTimer = null;
+
+    function applyRot() {
+        if (rotLocked || rotWant === rotOn) return;
+        rotOn = rotWant;
+        closeBtn.classList.toggle('rot', rotOn);
+        rotLocked = true;
+        rotTimer = setTimeout(() => { rotLocked = false; applyRot(); }, HOVER_LOCK);
+    }
+    closeBtn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'touch') return; rotWant = true; applyRot(); });
+    closeBtn.addEventListener('pointerleave', (e) => { if (e.pointerType === 'touch') return; rotWant = false; applyRot(); });
+
+    function openPage() {
+        if (pageState !== 'closed') return;
+        pageState = 'open';
+
+        // snap to the top, then lock page scrolling
+        if (lenis) lenis.scrollTo(0, { immediate: true, force: true });
+        window.scrollTo(0, 0);
+        if (lenis) lenis.stop();
+        htmlEl.classList.add('page-open');
+
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+
+        // snap the X back to its original rotation (no transition) and reset the hover state
+        closeSvg.style.transition = 'none';
+        closeSvg.style.rotate = '';
+        clearTimeout(rotTimer);
+        rotWant = rotOn = rotLocked = false;
+        closeBtn.classList.remove('rot');
+        void closeSvg.getBoundingClientRect();
+        closeSvg.style.transition = '';
+
+        closeBtn.classList.add('show');
+        void closeBtn.getBoundingClientRect();      // flush styles so the draw-in transition runs
+        closeSvg.classList.add('active');
+        closeBtn.focus({ preventScroll: true });
+        hoverDirty = true;
+    }
+
+    function closePage() {
+        if (pageState !== 'open') return;
+        pageState = 'closed';
+
+        // mouse on the X: let it keep rotating to the hovered position. Otherwise freeze it where it is.
+        // Either way it can't spin back while fading (inline style beats the .rot class).
+        closeSvg.style.rotate = rotWant ? '90deg' : getComputedStyle(closeSvg).rotate;
+
+        closeSvg.classList.remove('active');        // plays the draw animation in reverse
+        closeBtn.classList.remove('show');          // 0.9s opacity fade
+        overlay.classList.remove('open');           // 0.5s fade
+        overlay.setAttribute('aria-hidden', 'true');
+
+        // homepage scrolls again right away
+        htmlEl.classList.remove('page-open');
+        if (lenis) lenis.start();
+        hoverDirty = true;
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!(e.target instanceof Element)) return;
+        const album = e.target.closest('.album');
+        if (!album) return;
+        e.preventDefault();                         // the href stays in the HTML for later, but isn't followed
+        openPage(album);
+    });
+    closeBtn.addEventListener('click', closePage);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePage(); });
+
+    /* ================================================================
+   PROGRESSIVE COVERS
+   64px (in the HTML) -> 256px -> full size.
+   Each upgrade is loaded + decoded off-screen first, and only swapped
+   into the <img> once it's ready, so you never see a blank or a reload.
+   A stage only starts once every image has finished the previous one.
+   If a file is missing/fails, that image just keeps its current version.
+================================================================ */
     const coverImgs = Array.from(document.querySelectorAll('.cover img[data-full]'));
 
     const variantUrl = (img, suffix) => {

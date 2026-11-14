@@ -14,11 +14,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nick Jasper</title>
-    <meta name="description" content="Official website of Nick Jasper: musician, author, indie game developer, CEO of Lebbex, and creator of Arrel.">
+    <meta name="description"
+        content="Official website of Nick Jasper: musician, author, indie game developer, CEO of Lebbex, and creator of Arrel.">
     <meta property="og:title" content="Nick Jasper">
     <meta property="og:description" content="Official website of Nick Jasper.">
     <meta name="theme-color" content="#000000">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="svg.css">
     <link rel="icon" type="image/png" href="icon.png">
 </head>
 
@@ -28,8 +30,7 @@
          So a lone white pixel on black becomes a 3x3 black square on white inside the ring. -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <filter id="cursor-filter" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-            <feColorMatrix type="matrix"
-                values="0.2126 0.7152 0.0722 0 0
+            <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0
                         0.2126 0.7152 0.0722 0 0
                         0.2126 0.7152 0.0722 0 0
                         0      0      0      1 0" />
@@ -76,14 +77,16 @@
                                 <a class="album" data-fade="card"
                                     href="https://youtube.com/watch?v=95Vt00onysI&list=PLJrzrdM2WSXKXzhorP7A3yFC8lXLPzHgE"
                                     target="_blank" rel="noopener">
-                                    <div class="cover"><img src="covers/the64.png" data-full="covers/the.png" alt="" draggable="false"></div>
+                                    <div class="cover"><img src="covers/the64.png" data-full="covers/the.png" alt=""
+                                            draggable="false"></div>
                                     <p class="album-title">The cow that jumped over the moon and killed the rat</p>
                                 </a>
 
                                 <a class="album" data-fade="card"
                                     href="https://youtube.com/watch?v=jyHPsgV9p6w&list=PLJrzrdM2WSXJ7EXILNpxLMrXTTR95toSh"
                                     target="_blank" rel="noopener">
-                                    <div class="cover"><img src="covers/interlude64.png" data-full="covers/interlude.png" alt="" draggable="false"></div>
+                                    <div class="cover"><img src="covers/interlude64.png"
+                                            data-full="covers/interlude.png" alt="" draggable="false"></div>
                                     <p class="album-title">.&nbsp;&nbsp;I И T E R L U D E&nbsp;&nbsp;.</p>
                                 </a>
                             </div>
@@ -103,7 +106,8 @@
                                 <a class="album" data-fade="card"
                                     href="https://youtube.com/watch?v=JaP1nz73gEE&list=PLEWeFT0ctV_Y" target="_blank"
                                     rel="noopener">
-                                    <div class="cover"><img src="covers/indev64.png" data-full="covers/indev.png" alt="" draggable="false"></div>
+                                    <div class="cover"><img src="covers/indev64.png" data-full="covers/indev.png" alt=""
+                                            draggable="false"></div>
                                     <p class="album-title">Volume Indev</p>
                                 </a>
                             </div>
@@ -120,17 +124,34 @@
         <p>©2026-NICK-JASPER</p>
         <a class="link" data-fade="link" href="https://youtube.com/@NickJasper" target="_blank"
             rel="noopener">YOUTUBE</a>
-        <a class="link" data-fade="link" href="https://x.com/NickJasperr" target="_blank" 
-            rel="noopener">X</a>
-        <a class="link" data-fade="link" href="https://github.com/nickjasperr" target="_blank"
-            rel="noopener">GITHUB</a>
+        <a class="link" data-fade="link" href="https://x.com/NickJasperr" target="_blank" rel="noopener">X</a>
+        <a class="link" data-fade="link" href="https://github.com/nickjasperr" target="_blank" rel="noopener">GITHUB</a>
         <a class="link" data-fade="link" href="https://instagram.com/nickjasperr" target="_blank"
             rel="noopener">INSTA</a>
         <a class="link" data-fade="link" href="https://bsky.app/profile/nickjasper.bsky.social" target="_blank"
             rel="noopener">BSKY</a>
-        <a class="link" data-fade="link" href="https://lebbex.com" target="_blank"
-            rel="noopener">LEBBEX™</a>
+        <a class="link" data-fade="link" href="https://lebbex.com" target="_blank" rel="noopener">LEBBEX™</a>
     </footer>
+
+    <div class="page-overlay" id="page-overlay" aria-hidden="true" data-lenis-prevent>
+        <!-- pages load in here later -->
+    </div>
+
+    <button class="page-close" id="page-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 67.733334 67.733333" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+            <defs>
+                <filter id="close-aa" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+                    <feGaussianBlur stdDeviation="0.8" />
+                </filter>
+            </defs>
+            <circle class="svg-elem-1" cx="33.866665" cy="33.866665" r="33.866665" />
+            <g fill="none" stroke="#fff" stroke-width="4.23333" stroke-linecap="round" stroke-linejoin="round">
+                <circle class="svg-elem-2" cx="33.866665" cy="33.866669" r="25.400002" />
+                <path class="svg-elem-3" d="M 16.933334,16.933334 50.800002,50.800002" />
+                <path class="svg-elem-4" d="M 50.800002,16.933334 16.933334,50.800002" />
+            </g>
+        </svg>
+    </button>
 
     <!-- Lenis (pinned version). Site still works with native scrolling if this fails to load. -->
     <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>

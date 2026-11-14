@@ -1,0 +1,177 @@
+/* ==================================================================
+   SVG BUTTONS: close (X) button + carousel arrows
+   Adapted from SVG Artista output.
+================================================================== */
+
+
+/* ------------------------------------------------------------------
+   CLOSE BUTTON (SVG draw-in animation + hover rotation)
+   - .active on the <svg> = drawn in. Removing it plays the exact reverse
+     (same 1s stroke draw, fill delay in reverse).
+   - The button's own fade-out (0.9s) lives in style.css.
+   - Only the black backing disc (svg-elem-1) has a fill. The white
+     ring and the X are strokes only.
+------------------------------------------------------------------ */
+
+.page-close svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    transition: rotate 0.4s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+/* hover: 90deg clockwise, back again on un-hover (mouse only, nothing on touch).
+   The .rot class is toggled by script.js (it adds a 0.1s lock between triggers).
+   When the popup closes, script.js pins the rotation with an inline style: it finishes
+   rotating to 90deg if the mouse is on the X, otherwise it stays where it is. */
+@media (hover: hover) and (pointer: fine) {
+    .page-close.rot svg {
+        rotate: 90deg;
+    }
+}
+
+/* ---- element 1: black backing disc (the only fill) ---- */
+.page-close svg .svg-elem-1 {
+    fill: transparent;
+    transition: fill 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0.3s;
+}
+
+.page-close svg.active .svg-elem-1 {
+    fill: rgb(0, 0, 0);
+    transition: fill 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
+}
+
+/* ---- element 2: white ring (stroke only) ---- */
+.page-close svg .svg-elem-2 {
+    stroke-dasharray: 161.59px 500px;
+    stroke-dashoffset: 165px;               /* a little past the length, so no stray dot is left behind */
+    transition: stroke-dashoffset 1s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
+}
+
+.page-close svg.active .svg-elem-2 {
+    stroke-dashoffset: 0;
+}
+
+/* 0.5px anti-alias on the white ring (filter #close-aa is in the button's svg, in index.html).
+   Off on touch screens, same rule as --aa-blur in style.css. */
+.page-close svg .svg-elem-2 {
+    filter: url(#close-aa);
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .page-close svg .svg-elem-2 {
+        filter: none;
+    }
+}
+
+/* ---- element 3: first stroke of the X ---- */
+.page-close svg .svg-elem-3 {
+    stroke-dasharray: 49.89px 300px;
+    stroke-dashoffset: 52px;
+    transition: stroke-dashoffset 1s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
+}
+
+.page-close svg.active .svg-elem-3 {
+    stroke-dashoffset: 0;
+}
+
+/* ---- element 4: second stroke of the X ---- */
+.page-close svg .svg-elem-4 {
+    stroke-dasharray: 49.89px 300px;
+    stroke-dashoffset: 52px;
+    transition: stroke-dashoffset 1s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
+}
+
+.page-close svg.active .svg-elem-4 {
+    stroke-dashoffset: 0;
+}
+
+
+/* ------------------------------------------------------------------
+   CAROUSEL ARROWS (SVG draw animation)
+   - Arrow becomes enabled  -> draws in  (0.5s, staggered)
+   - Arrow becomes disabled -> draws out (0.4s, staggered)
+   Driven by the button's :disabled state, which script.js already toggles.
+   The .seen class (added by script.js the first time an arrow is shown)
+   stops the "out" animation from playing on page load.
+   The < arrow is the same svg mirrored (not rotated).
+   Each path's dash pattern is [length, 4 * length] so a hidden path
+   leaves no stray dot from the round caps.
+------------------------------------------------------------------ */
+
+.arrow svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.arrow-prev svg {
+    scale: -1 1;
+}
+
+/* ---- hidden resting state ---- */
+.arrow svg .svg-elem-1 {
+    fill: transparent;
+}
+
+.arrow svg .svg-elem-2,
+.arrow svg .svg-elem-3 {
+    stroke-dasharray: var(--len) calc(var(--len) * 4);
+    stroke-dashoffset: calc(var(--len) + 1px);
+}
+
+.arrow svg .svg-elem-2 {
+    --len: 39.4626px;
+}
+
+.arrow svg .svg-elem-3 {
+    --len: 92.7632px;
+}
+
+/* ---- in ---- */
+.arrow:not(:disabled) svg .svg-elem-1 {
+    animation: arrow-fill-in 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0s both;
+}
+
+.arrow:not(:disabled) svg .svg-elem-2 {
+    animation: arrow-draw-in 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0.12s both;
+}
+
+.arrow:not(:disabled) svg .svg-elem-3 {
+    animation: arrow-draw-in 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0.24s both;
+}
+
+/* ---- out ---- */
+.arrow:disabled.seen svg .svg-elem-1 {
+    animation: arrow-fill-out 0.5s cubic-bezier(0.55, 0.055, 0.675, 0.19) 0s both;
+}
+
+.arrow:disabled.seen svg .svg-elem-2 {
+    animation: arrow-draw-out 0.4s cubic-bezier(0.55, 0.055, 0.675, 0.19) 0.12s both;
+}
+
+.arrow:disabled.seen svg .svg-elem-3 {
+    animation: arrow-draw-out 0.4s cubic-bezier(0.55, 0.055, 0.675, 0.19) 0.24s both;
+}
+
+@keyframes arrow-draw-in {
+    from { stroke-dashoffset: calc(var(--len) + 1px); }
+    to   { stroke-dashoffset: 0px; }
+}
+
+@keyframes arrow-draw-out {
+    from { stroke-dashoffset: 0px; }
+    to   { stroke-dashoffset: calc(var(--len) * -1 - 1px); }
+}
+
+@keyframes arrow-fill-in {
+    from { fill: transparent; }
+    to   { fill: rgb(0, 0, 0); }
+}
+
+@keyframes arrow-fill-out {
+    from { fill: rgb(0, 0, 0); }
+    to   { fill: transparent; }
+}

@@ -72,12 +72,13 @@
     /* space between category title and its list (side layout), 0 = glued */
     --cat-spacing: 150px;
     /* space between categories (static) */
-    --arrow-w: 4.5rem;
-    /* < > button size */
-    --arrow-h: 7rem;
+    --arrow-size: 2.667rem;
+    /* < > button size (same as the X) */
+    --arrow-inset: 0.5rem;
+    /* side layout: distance between a < > button and the left/right edge of the list */
 
-    /* width needed for the side layout minus the title column (2 albums + arrows) (JS adds the title's width). Measured via .side-probe */
-    --side-min: calc(2 * var(--card-w) + var(--card-gap) + 2 * var(--edge) + var(--cat-gap) + var(--arrow-w));
+    /* width needed for the side layout minus the title column (2 albums) (JS adds the title's width). Measured via .side-probe */
+    --side-min: calc(2 * var(--card-w) + var(--card-gap) + 2 * var(--edge) + var(--cat-gap));
 }
 
 @media (hover: none) and (pointer: coarse) {
@@ -434,31 +435,51 @@ button {
     overflow-wrap: anywhere;
 }
 
-/* < > buttons: beside the list in the side layout, underneath it in the stacked layout.
-   50% opacity, 100% on hover, invisible when there is nothing to scroll to. */
-[data-layout="side"] .carousel {
-    display: grid;
-    grid-template-columns: minmax(0, max-content) var(--arrow-w);
-    align-items: center;
+/* < > buttons: overlaid on the list in the side layout, underneath it in the stacked layout.
+   50% opacity, 100% on hover (mouse only). The draw in/out animation is in svg.css and is
+   driven by the :disabled state (set by the script when there is nothing to scroll to). */
+.arrow {
+    width: var(--arrow-size);
+    height: var(--arrow-size);
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--fg);
+    opacity: 0.5;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: opacity 0.2s;
 }
 
-[data-layout="side"] .scroller {
-    grid-column: 1;
-    grid-row: 1 / span 2;
+@media (hover: hover) and (pointer: fine) {
+    .arrow:hover:not(:disabled) {
+        opacity: 1;
+    }
+}
+
+.arrow:disabled {
+    pointer-events: none;
+}
+
+/* side layout: on top of the list, vertically centred */
+[data-layout="side"] .arrow {
+    position: absolute;
+    top: 50%;
+    translate: 0 -50%;
+    z-index: 1;
 }
 
 [data-layout="side"] .arrow-prev {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: end;
+    left: var(--arrow-inset);
 }
 
 [data-layout="side"] .arrow-next {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: start;
+    right: var(--arrow-inset);
 }
 
+/* stacked layout: underneath the list */
 [data-layout="stack"] .carousel {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -467,6 +488,10 @@ button {
 [data-layout="stack"] .scroller {
     grid-column: 1 / -1;
     grid-row: 1;
+}
+
+[data-layout="stack"] .arrow {
+    margin: 0.75rem 0.375rem 0;
 }
 
 [data-layout="stack"] .arrow-prev {
@@ -484,40 +509,6 @@ button {
 /* nothing to scroll: no empty row under the list */
 [data-layout="stack"] .carousel.no-scroll .arrow {
     display: none;
-}
-
-.arrow {
-    width: var(--arrow-w);
-    height: var(--arrow-h);
-    display: grid;
-    place-items: center;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 3rem;
-    line-height: 1;
-    opacity: 0.5;
-    user-select: none;
-    -webkit-user-select: none;
-    transition: opacity 0.2s;
-}
-
-.arrow:hover:not(:disabled) {
-    opacity: 1;
-}
-
-.arrow:disabled {
-    opacity: 0;
-    pointer-events: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .arrow:hover:not(:disabled) {
-        opacity: 1;
-    }
 }
 
 /* ------------------------------------------------------------------
@@ -544,4 +535,57 @@ button {
     /* bigger hitbox: +10px each side, cancelled by the negative margin so nothing moves */
     padding: 10px;
     margin: -10px;
+}
+
+/* ------------------------------------------------------------------
+   PAGE OVERLAY + CLOSE BUTTON
+   Overlay appears instantly, fades out over 1s. The close button is a
+   separate fixed element above it (its SVG animation is in svg.css).
+------------------------------------------------------------------ */
+.page-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #000;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.5s linear, visibility 0s linear 0.5s;   /* fade out: 0.5s (item 7) */
+}
+
+.page-overlay.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: none;                                             /* instant in */
+}
+
+.page-close {
+    --close-size: 2.667rem;                                       /* 2/3 of the old 4rem */
+    position: fixed;
+    top: calc(var(--pad) + env(safe-area-inset-top, 0px));
+    right: calc(var(--pad) + env(safe-area-inset-right, 0px));
+    z-index: 101;
+    width: var(--close-size);
+    height: var(--close-size);
+    padding: 0;
+    border: 0;
+    background: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.9s linear, visibility 0s linear 0.9s;   /* hits 0 opacity at 0.9s (item 3) */
+}
+
+.page-close.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: none;                                             /* instant in */
+}
+
+html.page-open {
+    overflow: hidden;
 }
