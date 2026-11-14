@@ -513,6 +513,12 @@ button {
     pointer-events: none;
 }
 
+@media (hover: hover) and (pointer: fine) {
+    .arrow:hover:not(:disabled) {
+        opacity: 1;
+    }
+}
+
 /* ------------------------------------------------------------------
    FOOTER LINKS
 ------------------------------------------------------------------ */
@@ -533,4 +539,8 @@ button {
     text-underline-offset: 0.3em;
     text-decoration-color: rgba(255, 255, 255, 0);
     /* animated by JS */
+
+    /* bigger hitbox: +10px each side, cancelled by the negative margin so nothing moves */
+    padding: 10px;
+    margin: -10px;
 }
