@@ -300,10 +300,17 @@
             }));
         }, { passive: false });
 
+        let dest = null;   // where an arrow-started scroll is heading (so quick repeat clicks keep paging)
+
         const update = () => {
             const max = scroller.scrollWidth - scroller.clientWidth;
-            prev.disabled = scroller.scrollLeft <= 1;
-            next.disabled = scroller.scrollLeft >= max - 1;
+            // native-scroll fallback: forget the target once the list has got there
+            if (dest !== null && !inner && Math.abs(scroller.scrollLeft - dest) <= 1) dest = null;
+            // an arrow is hidden as soon as another click couldn't move the list any further than
+            // where it is already heading, not only once it has arrived
+            const pos = dest !== null ? dest : scroller.scrollLeft;
+            prev.disabled = pos <= 1;
+            next.disabled = pos >= max - 1;
             if (!prev.disabled) prev.classList.add('seen');   // the "out" animation only plays after an arrow has been shown once
             if (!next.disabled) next.classList.add('seen');
             root.classList.toggle('no-scroll', prev.disabled && next.disabled);
@@ -311,7 +318,6 @@
         };
 
         // Scroll by whole albums, as many as fit on screen
-        let dest = null;   // where an arrow-started animation is heading (so quick repeat clicks keep paging)
         const page = (dir) => {
             const first = track.children[0];
             if (!first) return;
@@ -321,19 +327,20 @@
             const max = scroller.scrollWidth - scroller.clientWidth;
             const target = clamp(Math.round(from / stepW) * stepW + dir * perPage * stepW, 0, max);
 
+            dest = target;
             if (inner) {
-                dest = target;
-                inner.scrollTo(target, { lerp: CAROUSEL.lerp, onComplete: () => { dest = null; } });
+                inner.scrollTo(target, { lerp: CAROUSEL.lerp, onComplete: () => { dest = null; update(); } });
             } else {
                 scroller.scrollTo({ left: target, behavior: reduceMotion ? 'auto' : 'smooth' });
             }
+            update();
         };
 
         prev.addEventListener('click', () => page(-1));
         next.addEventListener('click', () => page(1));
         scroller.addEventListener('scroll', update, { passive: true });
         // a finger grabbing the list cancels a pending arrow target
-        scroller.addEventListener('touchstart', () => { dest = null; }, { passive: true });
+        scroller.addEventListener('touchstart', () => { dest = null; update(); }, { passive: true });
 
         const ro = new ResizeObserver(update);
         ro.observe(scroller);
