@@ -644,9 +644,10 @@
         closeBtn.classList.remove('show');          // 0.9s opacity fade
 
         if (menuWasOpen) {
-            overlay.classList.add('no-fade');       // page popup: gone instantly...
-            menuPopup.classList.remove('open');     // ...only the menu popup fades (0.5s)
-            menuPopup.setAttribute('aria-hidden', 'true');
+    overlay.classList.add('no-fade');       // page popup: gone instantly...
+    menuPopup.classList.add('no-fade');     // ...and so is the menu popup
+    menuPopup.classList.remove('open');
+    menuPopup.setAttribute('aria-hidden', 'true');
         }
         overlay.classList.remove('open');           // 0.5s fade (instant if .no-fade)
         overlay.setAttribute('aria-hidden', 'true');
