@@ -514,12 +514,17 @@ button {
 /* ------------------------------------------------------------------
    FOOTER LINKS
 ------------------------------------------------------------------ */
-.links {
+.links,
+.menu-links {
+    /* the menu popup's list is laid out exactly like the footer */
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     text-align: center;
     gap: 0.5rem 2rem;
+}
+
+.links {
     padding: calc(var(--pad) * 2) var(--pad);
     padding-bottom: calc(var(--pad) * 2 + env(safe-area-inset-bottom, 0px));
 }
@@ -538,9 +543,10 @@ button {
 }
 
 /* ------------------------------------------------------------------
-   PAGE OVERLAY + CLOSE BUTTON
-   Overlay appears instantly, fades out over 1s. The close button is a
-   separate fixed element above it (its SVG animation is in svg.css).
+   PAGE OVERLAY + MENU POPUP + MENU/CLOSE BUTTON
+   Overlay appears instantly, fades out over 0.5s (or is hidden instantly when the menu popup is
+   open, see .no-fade). The menu popup fades over 0.5s, in step with the menu -> X morph in script.js.
+   The button is a separate fixed element above both (its SVG animation is in svg.css).
 ------------------------------------------------------------------ */
 .page-overlay {
     position: fixed;
@@ -560,6 +566,71 @@ button {
     visibility: visible;
     pointer-events: auto;
     transition: none;                                             /* instant in */
+}
+
+/* closed straight from the menu popup: hide instantly, the menu popup is the only thing that fades */
+.page-overlay.no-fade {
+    transition: none;
+}
+
+/* TEMP test content: the album cover, fitted to the window */
+.page-content {
+    width: 100%;
+    height: 100%;
+}
+
+.page-content img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Menu popup: sits above the page overlay (same z-index, later in the page, so it paints on top),
+   below the button. Keep the 0.5s in step with ICON.morphMs in script.js. */
+.menu-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--pad);
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.5s linear, visibility 0s linear 0.5s;
+}
+
+.menu-popup.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 0.5s linear, visibility 0s linear 0s;
+}
+
+.menu-popup.no-fade {
+    transition: none;
+}
+
+/* the options are .link buttons: everything else (underline fade, hitbox) is the footer's .link */
+.menu-link {
+    font: inherit;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* current page. Only Space Mono Regular is loaded, so the browser fakes the bold (font-synthesis).
+   For a real bold: add fonts/SpaceMono-Bold.ttf and a second @font-face with font-weight: 700. */
+.menu-link.current {
+    font-weight: 700;
+    font-synthesis: weight;
 }
 
 .page-close {

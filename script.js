@@ -56,6 +56,20 @@
         },
     };
 
+    // Menu button (top right). The menu icon morphs into the X when the menu popup opens, and back.
+    const ICON = {
+        morphMs: 500,                 // menu <-> X. Keep equal to the menu popup fade (0.5s in style.css)
+        ease: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),   // ease in-out cubic
+        barOffset: 9,                 // menu icon: top / bottom bar distance from the middle bar (was 12.7, lower = closer)
+        hoverShift: 3.5,              // menu hover: top bar up / bottom bar down by this much (icon units, the icon is 67.7 wide)
+        hoverLerp: {                  // how fast that hover shift eases in/out (0..1)
+            multiplierPlus: 12,
+            multiplierMinus: 12,
+            minDistance: 0.001,
+            maxSpeed: 8,
+        },
+    };
+
     /* ================================================================
        LERP: JS port of ULebbexFunctionsBPLibrary::UpdateLerpSmoothExcluded
        Returns { value, moved }  (value = "New", moved = "Moved")
@@ -394,6 +408,9 @@
             }
         }
 
+        // menu button: morph + hover shift
+        iconTick(now, dt);
+
         // album box backgrounds + link underlines
         for (const item of fadeItems) {
             const desired = item.el === hovered ? item.cfg.alpha : (item.cfg.base || 0);
@@ -409,21 +426,99 @@
     requestAnimationFrame(tick);
 
     /* ================================================================
-   PAGE OVERLAY
-   Click an album -> snap to top, overlay appears instantly, X draws in.
-   Click X (or Esc) -> X un-draws + fades (0.9s), overlay fades (0.5s, in style.css),
-   and the homepage is scrollable again straight away.
+   PAGE OVERLAY + MENU POPUP
+   Click an album -> snap to top, overlay appears instantly, the button draws in as the MENU icon.
+   Click the menu icon -> it morphs into the X (0.5s) while the menu popup fades in on top of the
+     page. The X can't be pressed until that's finished.
+   Click a menu option -> the menu popup fades out and the X morphs back into the menu icon (0.5s).
+   Click X (or Esc) -> the page overlay is hidden INSTANTLY, the menu popup fades out (0.5s), the X
+     un-draws + fades (0.9s) and the homepage is scrollable again straight away.
+   (Esc / the menu icon with no menu popup: the overlay fades out over 0.5s like before.)
 ================================================================ */
     const overlay = document.getElementById('page-overlay');
-    const closeBtn = document.getElementById('page-close');
+    const pageContent = document.getElementById('page-content');
+    const menuPopup = document.getElementById('menu-popup');
+    const closeBtn = document.getElementById('page-close');       // the menu / X button
     const closeSvg = closeBtn.querySelector('svg');
+    const iconTop = document.getElementById('icon-top');
+    const iconBottom = document.getElementById('icon-bottom');
+    const iconMid = document.getElementById('icon-mid');
     const htmlEl = document.documentElement;
-    let pageState = 'closed';   // closed | open
 
-    // hover rotation of the X: after it triggers, the opposite trigger waits 0.1s
-    // (then applies, if the mouse is still in that state)
-    const HOVER_LOCK = 100;
+    // closed = nothing open | page = page popup, button is the menu icon | menu = menu popup up, button is the X
+    let pageState = 'closed';
+    let busy = false;           // true during menu <-> X: the button (and Esc) are ignored
+
+    /* ---- the icon ----------------------------------------------------
+       Numbers are the ones in menu.svg / close.svg (viewBox units).
+       Top + bottom bars: the LEFT end slides in a straight line to its X spot. The RIGHT end is
+       lerped as angle + distance from the circle's centre, so it rides round the white ring
+       instead of cutting across. The middle bar just fades. The ring itself is never touched. */
+    const IC = { x: 33.866665, y: 33.866669 };                    // centre of the ring
+    const MENU_DY = ICON.barOffset;                               // top / bottom bar: distance from the centre line
+    const MENU_R = Math.hypot(21.166668, 12.700001);              // the bars' ends sit on this circle (just inside the ring)
+    const X_END = {
+        top: { l: [16.933334, 16.933334], r: [50.800002, 50.800002] },   // "\"
+        bottom: { l: [16.933334, 50.800002], r: [50.800002, 16.933334] },   // "/"
+    };
+    const mix = (a, b, t) => a + (b - a) * t;
+    const toPolar = (p) => ({ a: Math.atan2(p[1] - IC.y, p[0] - IC.x), r: Math.hypot(p[0] - IC.x, p[1] - IC.y) });
+    const X_POLAR = { top: toPolar(X_END.top.r), bottom: toPolar(X_END.bottom.r) };
+    const f3 = (n) => n.toFixed(3);
+
+    let iconP = 0;              // raw progress: 0 = menu icon, 1 = X
+    let iconExpand = 0;         // menu hover shift, 0..1 (eased by iconTick)
+    let tween = null;           // running menu <-> X morph: { from, to, start, done }
+
+    // side: -1 = top bar, 1 = bottom bar. t = eased morph (0..1). e = hover shift (0..1)
+    function setBar(path, side, t, e, end, endPolar) {
+        // menu position (with the hover shift). The ends stay on the same circle, so the bar gets
+        // a little shorter as it moves away from the centre.
+        const dy = side * (MENU_DY + ICON.hoverShift * e);
+        const hx = Math.sqrt(MENU_R * MENU_R - dy * dy);
+        const lx = mix(IC.x - hx, end.l[0], t);
+        const ly = mix(IC.y + dy, end.l[1], t);
+        const s = toPolar([IC.x + hx, IC.y + dy]);
+        const a = mix(s.a, endPolar.a, t);
+        const r = mix(s.r, endPolar.r, t);
+        path.setAttribute('d', `M ${f3(lx)},${f3(ly)} L ${f3(IC.x + Math.cos(a) * r)},${f3(IC.y + Math.sin(a) * r)}`);
+    }
+
+    function renderIcon() {
+        const t = ICON.ease(iconP);
+        const e = iconExpand * (1 - t);                           // no hover shift left once it is the X
+        setBar(iconTop, -1, t, e, X_END.top, X_POLAR.top);
+        setBar(iconBottom, 1, t, e, X_END.bottom, X_POLAR.bottom);
+        iconMid.style.opacity = t === 0 ? '' : String(1 - t);
+    }
+
+    function startMorph(to, done) {
+        tween = { from: iconP, to, start: performance.now(), done };
+    }
+
+    // called every frame from the main loop
+    function iconTick(now, dt) {
+        let dirty = false, finished = null;
+        if (tween) {
+            const k = clamp((now - tween.start) / ICON.morphMs, 0, 1);
+            iconP = mix(tween.from, tween.to, k);
+            dirty = true;
+            if (k >= 1) { finished = tween.done; tween = null; }
+        }
+        const r = stepWith(ICON.hoverLerp, expandWant ? 1 : 0, iconExpand, dt);
+        if (r.moved) { iconExpand = r.value; dirty = true; }
+        if (dirty) renderIcon();
+        if (finished) finished();
+    }
+
+    /* ---- hover ---------------------------------------------------------
+       X:         rotates 90deg (the .rot class, CSS in svg.css), as before.
+       menu icon: top bar up / bottom bar down (iconExpand, above).
+       Neither reacts while the icon is morphing. */
+    const HOVER_LOCK = 100;     // after the X rotation triggers, the opposite trigger waits 0.1s
+    let pointerInside = false;
     let rotWant = false, rotOn = false, rotLocked = false, rotTimer = null;
+    let expandWant = false;
 
     function applyRot() {
         if (rotLocked || rotWant === rotOn) return;
@@ -432,12 +527,35 @@
         rotLocked = true;
         rotTimer = setTimeout(() => { rotLocked = false; applyRot(); }, HOVER_LOCK);
     }
-    closeBtn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'touch') return; rotWant = true; applyRot(); });
-    closeBtn.addEventListener('pointerleave', (e) => { if (e.pointerType === 'touch') return; rotWant = false; applyRot(); });
 
-    function openPage() {
+    function syncHover() {
+        rotWant = pointerInside && pageState === 'menu' && !busy;
+        expandWant = pointerInside && pageState === 'page' && !busy;
+        applyRot();
+    }
+
+    closeBtn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'touch') return; pointerInside = true; syncHover(); });
+    closeBtn.addEventListener('pointerleave', (e) => { if (e.pointerType === 'touch') return; pointerInside = false; syncHover(); });
+
+    /* ---- TEMP test content: the album's cover, fitted to the window ---- */
+    function showTestContent(album) {
+        pageContent.textContent = '';
+        const src = album.querySelector('.cover img');
+        if (!src) return;
+        const im = new Image();
+        im.alt = '';
+        im.draggable = false;
+        im.src = src.currentSrc || src.src;                       // whatever is already loaded, so there is no blank
+        pageContent.appendChild(im);
+        const full = src.dataset.full;
+        if (full) preload(full).then((ok) => { if (ok && im.isConnected) im.src = full; });
+    }
+
+    /* ---- open / menu / close ---- */
+    function openPage(album) {
         if (pageState !== 'closed') return;
-        pageState = 'open';
+        pageState = 'page';
+        busy = false;
 
         // snap to the top, then lock page scrolling
         if (lenis) lenis.scrollTo(0, { immediate: true, force: true });
@@ -445,14 +563,34 @@
         if (lenis) lenis.stop();
         htmlEl.classList.add('page-open');
 
+        showTestContent(album);
+
+        // no menu popup left over from a quick close -> reopen
+        menuPopup.classList.add('no-fade');
+        menuPopup.classList.remove('open');
+        menuPopup.setAttribute('aria-hidden', 'true');
+        void menuPopup.offsetWidth;
+        menuPopup.classList.remove('no-fade');
+
+        overlay.classList.remove('no-fade');
         overlay.classList.add('open');
         overlay.setAttribute('aria-hidden', 'false');
+
+        // back to the menu icon (no animation), and reset the hover states
+        tween = null;
+        iconP = 0;
+        iconExpand = 0;
+        renderIcon();
+        closeBtn.setAttribute('aria-label', 'Menu');
+        closeBtn.setAttribute('aria-expanded', 'false');
 
         // snap the X back to its original rotation (no transition) and reset the hover state
         closeSvg.style.transition = 'none';
         closeSvg.style.rotate = '';
         clearTimeout(rotTimer);
+        pointerInside = false;
         rotWant = rotOn = rotLocked = false;
+        expandWant = false;
         closeBtn.classList.remove('rot');
         void closeSvg.getBoundingClientRect();
         closeSvg.style.transition = '';
@@ -464,8 +602,38 @@
         hoverDirty = true;
     }
 
+    // menu icon pressed: menu popup fades in, icon -> X
+    function openMenu() {
+        if (pageState !== 'page' || busy) return;
+        pageState = 'menu';
+        busy = true;
+        menuPopup.classList.add('open');            // 0.5s fade in
+        menuPopup.setAttribute('aria-hidden', 'false');
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.setAttribute('aria-expanded', 'true');
+        startMorph(1, () => { busy = false; syncHover(); });
+        syncHover();
+        hoverDirty = true;
+    }
+
+    // menu option pressed: menu popup fades out (page popup is underneath), X -> menu icon
+    function pickMenuOption() {
+        if (pageState !== 'menu' || busy) return;
+        pageState = 'page';
+        busy = true;
+        menuPopup.classList.remove('open');         // 0.5s fade out
+        menuPopup.setAttribute('aria-hidden', 'true');
+        closeBtn.setAttribute('aria-label', 'Menu');
+        closeBtn.setAttribute('aria-expanded', 'false');
+        closeBtn.focus({ preventScroll: true });    // the option that had focus is going away
+        startMorph(0, () => { busy = false; syncHover(); });
+        syncHover();
+        hoverDirty = true;
+    }
+
     function closePage() {
-        if (pageState !== 'open') return;
+        if (pageState === 'closed' || busy) return;
+        const menuWasOpen = pageState === 'menu';
         pageState = 'closed';
 
         // mouse on the X: let it keep rotating to the hovered position. Otherwise freeze it where it is.
@@ -474,12 +642,19 @@
 
         closeSvg.classList.remove('active');        // plays the draw animation in reverse
         closeBtn.classList.remove('show');          // 0.9s opacity fade
-        overlay.classList.remove('open');           // 0.5s fade
+
+        if (menuWasOpen) {
+            overlay.classList.add('no-fade');       // page popup: gone instantly...
+            menuPopup.classList.remove('open');     // ...only the menu popup fades (0.5s)
+            menuPopup.setAttribute('aria-hidden', 'true');
+        }
+        overlay.classList.remove('open');           // 0.5s fade (instant if .no-fade)
         overlay.setAttribute('aria-hidden', 'true');
 
         // homepage scrolls again right away
         htmlEl.classList.remove('page-open');
         if (lenis) lenis.start();
+        syncHover();
         hoverDirty = true;
     }
 
@@ -490,8 +665,17 @@
         e.preventDefault();                         // the href stays in the HTML for later, but isn't followed
         openPage(album);
     });
-    closeBtn.addEventListener('click', closePage);
+    closeBtn.addEventListener('click', () => {
+        if (busy) return;
+        if (pageState === 'page') openMenu();
+        else if (pageState === 'menu') closePage();
+    });
+    menuPopup.addEventListener('click', (e) => {
+        if (e.target instanceof Element && e.target.closest('.menu-link')) pickMenuOption();   // purely aesthetic for now
+    });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePage(); });
+
+    renderIcon();
 
     /* ================================================================
    PROGRESSIVE COVERS

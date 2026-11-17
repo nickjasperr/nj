@@ -5,12 +5,13 @@
 
 
 /* ------------------------------------------------------------------
-   CLOSE BUTTON (SVG draw-in animation + hover rotation)
+   MENU / CLOSE BUTTON (SVG draw-in animation + hover rotation)
+   The button starts as the menu icon (3 bars) and script.js morphs it into the X.
    - .active on the <svg> = drawn in. Removing it plays the exact reverse
      (same 1s stroke draw, fill delay in reverse).
    - The button's own fade-out (0.9s) lives in style.css.
    - Only the black backing disc (svg-elem-1) has a fill. The white
-     ring and the X are strokes only.
+     ring and the bars are strokes only.
 ------------------------------------------------------------------ */
 
 .page-close svg {
@@ -21,7 +22,7 @@
     transition: rotate 0.4s cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 
-/* hover: 90deg clockwise, back again on un-hover (mouse only, nothing on touch).
+/* hover (X only, not the menu icon): 90deg clockwise, back again on un-hover (mouse only, nothing on touch).
    The .rot class is toggled by script.js (it adds a 0.1s lock between triggers).
    When the popup closes, script.js pins the rotation with an inline style: it finishes
    rotating to 90deg if the mouse is on the X, otherwise it stays where it is. */
@@ -65,26 +66,36 @@
     }
 }
 
-/* ---- element 3: first stroke of the X ---- */
-.page-close svg .svg-elem-3 {
-    stroke-dasharray: 49.89px 300px;
-    stroke-dashoffset: 52px;
+/* ---- elements 3, 4, 5: the bars (top, bottom, middle) ----
+   Each <path> has pathLength="1" in index.html, so a dash of 1 is always exactly one whole bar,
+   whatever shape script.js has morphed it into (menu bar or X stroke). The hidden offset is a
+   little past 1, so no stray dot is left behind by the round cap. Same 1s draw as before. */
+.page-close svg .svg-elem-3,
+.page-close svg .svg-elem-4,
+.page-close svg .svg-elem-5 {
+    stroke-dasharray: 1 4;
+    stroke-dashoffset: 1.1;
     transition: stroke-dashoffset 1s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
 }
 
-.page-close svg.active .svg-elem-3 {
+.page-close svg.active .svg-elem-3,
+.page-close svg.active .svg-elem-4,
+.page-close svg.active .svg-elem-5 {
     stroke-dashoffset: 0;
 }
 
-/* ---- element 4: second stroke of the X ---- */
-.page-close svg .svg-elem-4 {
-    stroke-dasharray: 49.89px 300px;
-    stroke-dashoffset: 52px;
-    transition: stroke-dashoffset 1s cubic-bezier(0.215, 0.61, 0.355, 1) 0s;
+/* draw-in stagger: top bar first, then the middle, then the bottom, 0.2s apart.
+   (Only on the way in. The un-draw has no delay, it uses the rule above.) */
+.page-close svg.active .svg-elem-3 {
+    transition-delay: 0s;
+}
+
+.page-close svg.active .svg-elem-5 {
+    transition-delay: 0.2s;
 }
 
 .page-close svg.active .svg-elem-4 {
-    stroke-dashoffset: 0;
+    transition-delay: 0.4s;
 }
 
 
