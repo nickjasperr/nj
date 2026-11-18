@@ -20,6 +20,11 @@
     --vh: 1vh;
 
     --pad: clamp(1rem, 3vw, 2.5rem);
+    --menu-blur: 5px;                     /* page blur while the menu is open */
+    --menu-dim: 0.8;                      /* menu background opacity while the menu is open */
+    --menu-dim-ease: cubic-bezier(0.215, 0.61, 0.355, 1);   /* menu background fade: starts fast, tapers off as it gets darker */
+    --menu-gap: 1.25rem;                  /* space between the menu options and the menu / X button */
+    --close-size: 2.667rem;               /* menu / X button size (same value as .page-close) */
     /* page side padding */
 
     --cursor-blur: 1px;
@@ -565,21 +570,34 @@ button {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transition: none;                                             /* instant in */
+    transition: none;                                             /* black background: instant in */
 }
 
-/* closed straight from the menu popup: hide instantly, the menu popup is the only thing that fades */
 .page-overlay.no-fade {
     transition: none;
 }
 
-/* TEMP test content: the album cover, fitted to the window */
+/* TEMP test content: the album cover, fitted to the window.
+   Opening: fades in over 1.5s (the black overlay itself is instant). Menu open: blurs 0 -> 5px (0.5s).
+   Closing: hidden instantly (no transition on the resting state), only the black overlay fades out. */
 .page-content {
+    position: relative;
+    z-index: 0;
     width: 100%;
     height: 100%;
+    opacity: 0;
 }
 
-.page-content img {
+.page-overlay.open .page-content {
+    opacity: 1;
+    transition: opacity 1.5s linear, filter 0.5s linear;
+}
+
+.page-overlay.menu-open .page-content {
+    filter: blur(var(--menu-blur));
+}
+
+.page-content > img {
     display: block;
     width: 100%;
     height: 100%;
@@ -588,36 +606,127 @@ button {
     -webkit-user-select: none;
 }
 
-/* Menu popup: sits above the page overlay (same z-index, later in the page, so it paints on top),
-   below the button. Keep the 0.5s in step with ICON.morphMs in script.js. */
-.menu-popup {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
+/* scrollbar hidden while the LISTEN page is shown (script.js toggles this; the page still scrolls) */
+.page-overlay.no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.page-overlay.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* LISTEN page (built by script.js): centred categories, each a title (+ platform icon) over a grid of
+   album cards. The cards are the homepage's .album / .cover / .album-title, so they look identical; the
+   grid has no scrolling, its columns just stretch so the cards fill the width. Few cards: the grid stops
+   growing at --n cards wide and stays centred. */
+.listen {
+    padding: calc(var(--pad) * 2 + var(--close-size)) var(--pad);
+}
+
+.listen-cat+.listen-cat {
+    margin-top: var(--cat-spacing);
+}
+
+.listen-title {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--pad);
+    gap: var(--icon-gap, 0.6em);        /* padding between the icon and the name */
+    margin-bottom: 0.75rem;
+}
+
+.listen-title>* {
+    flex: none;                         /* never squeezed: the script measures these to fit the card width */
+}
+
+.listen-title img {
+    display: block;
+    height: 1.1em;
+    width: auto;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.listen-grid {
+    --n: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr));
+    gap: var(--card-gap);
+    max-width: calc(var(--n) * var(--card-w) + (var(--n) - 1) * var(--card-gap));
+    margin-inline: auto;
+}
+
+.listen-grid .cover {
+    width: 100%;
+}
+
+/* Menu background: black, in front of the page content, behind the options. 0% -> 80% over 0.5s.
+   Only clickable while the menu is open (a click on it closes the menu). */
+.menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
     background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s var(--menu-dim-ease);
+}
+
+.page-overlay.menu-open .menu-backdrop {
+    opacity: var(--menu-dim);
+    pointer-events: auto;
+}
+
+/* Menu options: in front of everything inside the overlay, NO background of its own. Fades 0.5s,
+   in step with ICON.morphMs in script.js. Keep that 0.5s in step with the backdrop + blur above. */
+.menu-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transition: opacity 0.5s linear, visibility 0s linear 0.5s;
 }
 
-.menu-popup.open {
+.page-overlay.menu-open .menu-popup {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
     transition: opacity 0.5s linear, visibility 0s linear 0s;
 }
 
-.menu-popup.no-fade {
-    transition: none;
+/* hide instantly (script.js, when the whole popup closes or another option is picked) */
+.menu-popup.no-fade,
+.menu-backdrop.no-fade {
+    transition: none !important;
+}
+
+/* the options sit to the LEFT of the button, right-justified, wrapping onto more lines if needed.
+   Same top as the button (grows downward), or same bottom on touch screens (grows upward). */
+.menu-popup .menu-links {
+    position: absolute;
+    top: calc(var(--pad) + env(safe-area-inset-top, 0px));
+    right: calc(var(--pad) + env(safe-area-inset-right, 0px) + var(--close-size) + var(--menu-gap));
+    left: calc(var(--pad) + env(safe-area-inset-left, 0px));
+    min-height: var(--close-size);
+    align-items: center;
+    justify-content: flex-end;
+    text-align: right;
+}
+
+@media (hover: none),
+(pointer: coarse) {
+    .menu-popup .menu-links {
+        top: auto;
+        bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 /* the options are .link buttons: everything else (underline fade, hitbox) is the footer's .link */
 .menu-link {
+    white-space: nowrap;
     font: inherit;
     background: none;
     border: 0;
@@ -631,6 +740,7 @@ button {
 .menu-link.current {
     font-weight: 700;
     font-synthesis: weight;
+    pointer-events: none;       /* the selected option can't be hovered or underlined; a click falls through and just closes the menu */
 }
 
 .page-close {
@@ -655,6 +765,15 @@ button {
     visibility: visible;
     pointer-events: auto;
     transition: none;                                             /* instant in */
+}
+
+/* touch screens (no cursor): the menu / X button moves to the bottom right corner */
+@media (hover: none),
+(pointer: coarse) {
+    .page-close {
+        top: auto;
+        bottom: calc(var(--pad) + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 html.page-open {

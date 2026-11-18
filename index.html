@@ -134,19 +134,19 @@
     </footer>
 
     <div class="page-overlay" id="page-overlay" aria-hidden="true" data-lenis-prevent>
-        <!-- TEMP test content (the album cover, fitted to the window). script.js fills this in.
-             Later: fetch the real page html into here instead. -->
+        <!-- Layers inside the ONE shared black background (the overlay), back to front:
+             1. page content (TEMP: the album cover, script.js fills this in. Later: the real page html)
+             2. menu background (black, 0% -> 80% while the menu is open)
+             3. menu options (right-justified, next to the menu / X button) -->
         <div class="page-content" id="page-content"></div>
-    </div>
 
-    <!-- Menu popup: fades in on top of the page popup when the menu button is pressed.
-         The options do nothing yet except close this popup (script.js). CONTEXT is the default page. -->
-    <div class="menu-popup" id="menu-popup" aria-hidden="true" data-lenis-prevent>
-        <nav class="menu-links" aria-label="Sections">
-            <button class="link menu-link current" type="button" data-fade="link" aria-current="page">CONTEXT</button>
-            <button class="link menu-link" type="button" data-fade="link">SAMPLES</button>
-            <button class="link menu-link" type="button" data-fade="link">LISTEN</button>
-        </nav>
+        <div class="menu-backdrop" id="menu-backdrop" aria-hidden="true"></div>
+
+        <div class="menu-popup" id="menu-popup" aria-hidden="true" data-lenis-prevent>
+            <nav class="menu-links" aria-label="Sections">
+                <!-- the options are built by script.js from the opened album's tabs (ALBUMS at the top of script.js) + LISTEN -->
+            </nav>
+        </div>
     </div>
 
     <!-- Top-right button. Starts as the menu icon, becomes the X while the menu popup is open

@@ -2,6 +2,98 @@
     'use strict';
 
     /* ================================================================
+       ALBUM DATA
+       One entry per album, keyed by the album's id in index.html without the "album-" part
+       (id="album-the" -> the). Every album gets a menu made of its tabs + the required LISTEN tab.
+         tabs     menu options, in order (LISTEN is always added at the end)
+         editions platform -> list of editions. The platform name is the LISTEN category title
+                  (YOUTUBE, SOUNDCLOUD...), its icon is icon/<platform>.png (skipped if missing).
+                  An edition card shows <album>/<cover>.png (cover = optional id of a custom cover image),
+                  falling back to covers/<album>.png when there is no cover or the file is missing
+                  (png, then jpg, then jpeg for each),
+                  plus the name, and opens the link.
+                  Platforms with no editions are not shown.
+    ================================================================ */
+    const ALBUMS = {
+        the: {
+            tabs: ['context', 'samples'],
+            editions: {
+                youtube: [
+                    {
+                        cover: '2023',
+                        name: 'October 2023 (instrumental)',
+                        link: 'https://youtube.com/watch?v=95Vt00onysI&list=PLJrzrdM2WSXKXzhorP7A3yFC8lXLPzHgE',
+                    },
+                ],
+                soundcloud: [
+                    {
+                        cover: '2022',
+                        name: '2022 (instrumental)',
+                        link: 'https://youtube.com/watch?v=95Vt00onysI&list=PLJrzrdM2WSXKXzhorP7A3yFC8lXLPzHgE',
+                    },
+                ],
+            },
+        },
+        interlude: {
+            tabs: ['context', 'samples'],
+            editions: {
+                youtube: [
+                    {
+                        cover: 'pre',
+                        name: 'Pre-Release',
+                        link: 'https://youtube.com/watch?v=jyHPsgV9p6w&list=PLJrzrdM2WSXJ7EXILNpxLMrXTTR95toSh',
+                    },
+                ],
+                soundcloud: [],
+            },
+        },
+        indev: {
+            tabs: ['context', 'samples'],
+            editions: {
+                youtube: [
+                    {
+                        cover: 'original',
+                        name: 'Original Release',
+                        link: 'https://youtube.com/watch?v=JaP1nz73gEE&list=PLEWeFT0ctV_Y',
+                    },
+                ],
+                soundcloud: [],
+            },
+        },
+    };
+
+
+    // Icons built into the script (no file needed). These win over icon/<platform>.png / .svg.
+    // youtube: YouTube full-color icon (2017), by Jarould, public domain, via Wikimedia Commons
+    //          https://commons.wikimedia.org/wiki/File:YouTube_full-color_icon_(2017).svg
+    const BUILTIN_ICONS = {
+        youtube: 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="71.412" height="50" viewBox="0 0 71.412065 50">' +
+            '<path fill="#f00" d="M69.912 7.822A8.968 8.968 0 0 0 63.58 1.49C58.026 0 35.706 0 35.706 0S13.386 0 7.832 1.49a8.968 8.968 0 0 0-6.333 6.333C0 13.38 0 25 0 25s0 11.62 1.5 17.178a8.968 8.968 0 0 0 6.332 6.332C13.386 50 35.706 50 35.706 50s22.32 0 27.874-1.49a8.968 8.968 0 0 0 6.332-6.332c1.5-5.558 1.5-17.178 1.5-17.178s0-11.62-1.5-17.178z"/>' +
+            '<path fill="#fff" d="M28.564 35.706 47.09 25 28.564 14.294z"/></svg>'
+        ),
+    };
+
+    // where the LISTEN page looks for its images (relative to index.html)
+    const PATHS = {
+        editionCover: (album, cover, ext) => `${album}/${cover}.${ext}`,
+        albumCover: (album, ext) => `covers/${album}.${ext}`,         // used when an edition has no (working) custom cover
+        platformIcon: (platform, ext) => `icon/${platform}.${ext}`,
+        coverExts: ['png', 'jpg', 'jpeg'],                            // tried in this order
+        iconExts: ['png', 'svg', 'jpg', 'jpeg'],
+    };
+
+    // Point an <img> at the first of these urls that loads. Returns nothing; onFail runs if none does.
+    function loadFirst(img, urls, onFail) {
+        let i = 0;
+        img.onerror = () => {
+            if (++i < urls.length) img.src = urls[i];
+            else if (onFail) onFail();
+        };
+        img.src = urls[0];
+    }
+
+    /* ================================================================
        CONFIG: everything you'll want to tweak lives here
     ================================================================ */
 
@@ -108,6 +200,7 @@
        LENIS (page)
     ================================================================ */
     let lenis = null;
+    let pageLenis = null;      // smooth scroll of the page popup (only while the LISTEN page is shown)
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (window.Lenis && !reduceMotion) {
         lenis = new Lenis(LENIS);
@@ -378,6 +471,22 @@
         };
     });
 
+    // Elements added later (the menu options, the LISTEN cards) join the same hover fades
+    // (call it once the element is in the page. Forgetting removed elements is pruneFade's job)
+    function registerFade(el) {
+        const isCard = el.dataset.fade === 'card';
+        fadeItems.push({
+            el,
+            cfg: isCard ? CARD_FADE : LINK_FADE,
+            prop: isCard ? 'backgroundColor' : 'textDecorationColor',
+            current: cfg_base(isCard),
+        });
+    }
+
+    function pruneFade() {
+        for (let i = fadeItems.length - 1; i >= 0; i--) if (!fadeItems[i].el.isConnected) fadeItems.splice(i, 1);
+    }
+
     /* ================================================================
        MAIN LOOP
     ================================================================ */
@@ -389,6 +498,7 @@
         last = now;
 
         if (lenis) lenis.raf(now);
+        if (pageLenis) pageLenis.raf(now);
         for (const c of carousels) if (c.inner) c.inner.raf(now);
 
         if (hoverDirty && visible) {
@@ -426,18 +536,23 @@
     requestAnimationFrame(tick);
 
     /* ================================================================
-   PAGE OVERLAY + MENU POPUP
-   Click an album -> snap to top, overlay appears instantly, the button draws in as the MENU icon.
-   Click the menu icon -> it morphs into the X (0.5s) while the menu popup fades in on top of the
-     page. The X can't be pressed until that's finished.
-   Click a menu option -> the menu popup fades out and the X morphs back into the menu icon (0.5s).
-   Click X (or Esc) -> the page overlay is hidden INSTANTLY, the menu popup fades out (0.5s), the X
-     un-draws + fades (0.9s) and the homepage is scrollable again straight away.
-   (Esc / the menu icon with no menu popup: the overlay fades out over 0.5s like before.)
+   PAGE OVERLAY + MENU
+   One shared black background (the overlay): appears instantly, fades out over 0.5s when closed.
+   Layers on it, back to front: page content, menu background, menu options.
+   Click an album -> overlay instant, page content fades in over 1.5s, the button draws in as the menu icon.
+   Click the menu icon -> over 0.5s: menu background 0 -> 80%, page blur 0 -> 5px, options fade in,
+     icon -> X.
+   Click the background / the selected option -> all of that in reverse (0.5s).
+   Click another option -> the page content is swapped for the new one, then the same reverse animation.
+   Click X (or Esc; works 0.2s after the menu started opening) -> page content, options and menu
+     background vanish instantly, the black fades out over 0.5s, homepage usable straight away.
 ================================================================ */
     const overlay = document.getElementById('page-overlay');
     const pageContent = document.getElementById('page-content');
     const menuPopup = document.getElementById('menu-popup');
+    const menuBackdrop = document.getElementById('menu-backdrop');
+    const menuNav = menuPopup.querySelector('.menu-links');
+    let menuLinks = [];
     const closeBtn = document.getElementById('page-close');       // the menu / X button
     const closeSvg = closeBtn.querySelector('svg');
     const iconTop = document.getElementById('icon-top');
@@ -447,7 +562,11 @@
 
     // closed = nothing open | page = page popup, button is the menu icon | menu = menu popup up, button is the X
     let pageState = 'closed';
-    let busy = false;           // true during menu <-> X: the button (and Esc) are ignored
+    let busy = false;           // true during menu <-> X: the menu button can't be pressed again yet
+    let menuStart = 0;          // when the menu started opening (the X works 0.2s after this)
+    let currentAlbum = null;    // the album whose page is open
+    let currentKey = '';        // its key in ALBUMS
+    const X_READY_MS = 200;
 
     /* ---- the icon ----------------------------------------------------
        Numbers are the ones in menu.svg / close.svg (viewBox units).
@@ -489,18 +608,28 @@
         const e = iconExpand * (1 - t);                           // no hover shift left once it is the X
         setBar(iconTop, -1, t, e, X_END.top, X_POLAR.top);
         setBar(iconBottom, 1, t, e, X_END.bottom, X_POLAR.bottom);
-        iconMid.style.opacity = t === 0 ? '' : String(1 - t);
+        // middle bar: fades AND retracts towards the left (the reverse of its draw-in, see svg.css).
+        // Inline styles only while morphing, so the CSS draw-in / un-draw still drives it the rest of the time.
+        if (t === 0) {
+            iconMid.style.opacity = '';
+            iconMid.style.strokeDashoffset = '';
+            iconMid.style.transition = '';
+        } else {
+            iconMid.style.transition = 'none';
+            iconMid.style.opacity = String(1 - t);
+            iconMid.style.strokeDashoffset = String(t * 1.1);
+        }
     }
 
     function startMorph(to, done) {
-        tween = { from: iconP, to, start: performance.now(), done };
+        tween = { from: iconP, to, start: performance.now(), dur: Math.max(1, ICON.morphMs * Math.abs(to - iconP)), done };
     }
 
     // called every frame from the main loop
     function iconTick(now, dt) {
         let dirty = false, finished = null;
         if (tween) {
-            const k = clamp((now - tween.start) / ICON.morphMs, 0, 1);
+            const k = clamp((now - tween.start) / tween.dur, 0, 1);
             iconP = mix(tween.from, tween.to, k);
             dirty = true;
             if (k >= 1) { finished = tween.done; tween = null; }
@@ -529,7 +658,7 @@
     }
 
     function syncHover() {
-        rotWant = pointerInside && pageState === 'menu' && !busy;
+        rotWant = pointerInside && pageState === 'menu';      // also while the menu icon is still turning into the X
         expandWant = pointerInside && pageState === 'page' && !busy;
         applyRot();
     }
@@ -551,7 +680,157 @@
         if (full) preload(full).then((ok) => { if (ok && im.isConnected) im.src = full; });
     }
 
+    /* ---- tabs + pages ---- */
+    // menu options of the opened album: its tabs, then LISTEN
+    function buildMenu(key) {
+        const tabs = ((ALBUMS[key] && ALBUMS[key].tabs) || []).map((t) => String(t).toLowerCase()).filter((t) => t !== 'listen');
+        tabs.push('listen');
+        menuNav.textContent = '';
+        pruneFade();
+        menuLinks = tabs.map((tab, i) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'link menu-link' + (i === 0 ? ' current' : '');
+            b.dataset.fade = 'link';
+            b.dataset.tab = tab;
+            b.textContent = tab.toUpperCase();
+            if (i === 0) b.setAttribute('aria-current', 'page');
+            menuNav.appendChild(b);
+            registerFade(b);
+            return b;
+        });
+        return tabs[0];
+    }
+
+    // LISTEN page: a centred category per platform (icon + title), a grid of edition cards under it
+    function showListen(key) {
+        const root = document.createElement('div');
+        root.className = 'listen';
+        const editions = (ALBUMS[key] && ALBUMS[key].editions) || {};
+        const cards = [];
+        for (const [platform, list] of Object.entries(editions)) {
+            if (!Array.isArray(list) || !list.length) continue;
+
+            const cat = document.createElement('section');
+            cat.className = 'listen-cat';
+
+            const title = document.createElement('h2');
+            title.className = 'cat-title listen-title';
+            const label = document.createElement('span');
+            label.textContent = platform.toUpperCase();
+            title.appendChild(label);
+            // icon: the built-in one, else icon/<platform>.png / .svg / .jpg / .jpeg. Only added if one loads.
+            const iconUrls = BUILTIN_ICONS[platform]
+                ? [BUILTIN_ICONS[platform]]
+                : PATHS.iconExts.map((ext) => PATHS.platformIcon(platform, ext));
+            const icon = new Image();
+            icon.alt = '';
+            icon.draggable = false;
+            icon.onload = () => { title.prepend(icon); fitListenTitles(); };
+            loadFirst(icon, iconUrls);
+            cat.appendChild(title);
+
+            const grid = document.createElement('div');
+            grid.className = 'listen-grid';
+            grid.style.setProperty('--n', list.length);
+            for (const ed of list) {
+                const a = document.createElement('a');
+                a.className = 'album';
+                a.dataset.fade = 'card';
+                a.href = ed.link;
+                a.target = '_blank';
+                a.rel = 'noopener';
+
+                const cover = document.createElement('div');
+                cover.className = 'cover';
+                const im = new Image();
+                im.alt = '';
+                im.draggable = false;
+                // custom cover (<album>/<cover>.png / .jpg / .jpeg), then the album's own covers/<album>.png / .jpg / .jpeg
+                const coverUrls = [
+                    ...(ed.cover ? PATHS.coverExts.map((ext) => PATHS.editionCover(key, ed.cover, ext)) : []),
+                    ...PATHS.coverExts.map((ext) => PATHS.albumCover(key, ext)),
+                ];
+                loadFirst(im, coverUrls, () => im.remove());      // nothing found: the grey placeholder stays
+                cover.appendChild(im);
+
+                const name = document.createElement('p');
+                name.className = 'album-title';
+                name.textContent = ed.name;
+
+                a.append(cover, name);
+                grid.appendChild(a);
+                cards.push(a);
+            }
+            cat.appendChild(grid);
+            root.appendChild(cat);
+        }
+        pageContent.appendChild(root);
+        cards.forEach(registerFade);                              // hover fade (after they are in the page)
+
+        // titles are as wide as one card (same as the homepage's stacked layout); cards stretch with the
+        // window, so re-fit whenever the list changes size
+        listenRO = new ResizeObserver(fitListenTitles);
+        listenRO.observe(root);
+        fitListenTitles();
+        return root;
+    }
+
+    // Smooth scrolling for the LISTEN page only: the popup (overlay) is the scroll container. Other pages
+    // are left alone so they can scroll however they like. Its data-lenis-prevent is lifted meanwhile
+    // (that attribute makes Lenis ignore wheel events inside it).
+    function startListenScroll(root) {
+        overlay.classList.add('no-scrollbar');
+        if (!window.Lenis || reduceMotion) return;                 // native scrolling, just without the bar
+        overlay.removeAttribute('data-lenis-prevent');
+        pageLenis = new Lenis({ ...LENIS, wrapper: overlay, content: root });
+    }
+
+    function stopListenScroll() {
+        if (pageLenis) { pageLenis.destroy(); pageLenis = null; }
+        overlay.setAttribute('data-lenis-prevent', '');
+        overlay.classList.remove('no-scrollbar');
+    }
+
+    // font size so that [icon + gap + title text] is exactly one album card wide. Everything is measured
+    // (all of it scales with the font size), so it works for any icon shape, png or svg.
+    let listenRO = null;
+    function fitListenTitles() {
+        for (const cat of pageContent.querySelectorAll('.listen-cat')) {
+            const title = cat.querySelector('.listen-title');
+            const card = cat.querySelector('.album');
+            const label = title.querySelector('span');
+            if (!card || !label) continue;
+            const cs = getComputedStyle(title);
+            const fs = parseFloat(cs.fontSize);
+            const icon = title.querySelector('img');
+            const total = label.offsetWidth + (icon ? icon.offsetWidth + (parseFloat(cs.columnGap) || 0) : 0);
+            if (total && fs) title.style.fontSize = Math.floor(card.offsetWidth * fs / total) + 'px';
+        }
+    }
+
+    // replace the page content with the page for a tab (context / samples: the cover for now)
+    function loadTab(tab) {
+        if (listenRO) { listenRO.disconnect(); listenRO = null; }
+        stopListenScroll();
+        pageContent.textContent = '';
+        pruneFade();
+        overlay.scrollTop = 0;
+        if (tab === 'listen') startListenScroll(showListen(currentKey));
+        else if (currentAlbum) showTestContent(currentAlbum);
+        hoverDirty = true;
+    }
+
     /* ---- open / menu / close ---- */
+    // menu layers (options + background) and the page blur snap back to their closed state, no animation.
+    // The caller removes .no-fade again after a reflow.
+    function hideMenuLayers() {
+        menuPopup.classList.add('no-fade');
+        menuBackdrop.classList.add('no-fade');
+        overlay.classList.remove('menu-open');
+        menuPopup.setAttribute('aria-hidden', 'true');
+    }
+
     function openPage(album) {
         if (pageState !== 'closed') return;
         pageState = 'page';
@@ -563,14 +842,15 @@
         if (lenis) lenis.stop();
         htmlEl.classList.add('page-open');
 
-        showTestContent(album);
+        currentAlbum = album;
+        currentKey = album.dataset.album || album.id.replace(/^album-/, '');
+        loadTab(buildMenu(currentKey));
 
-        // no menu popup left over from a quick close -> reopen
-        menuPopup.classList.add('no-fade');
-        menuPopup.classList.remove('open');
-        menuPopup.setAttribute('aria-hidden', 'true');
+        // no menu layers left over from a quick close: blur back to 0, menu background back to 0%
+        hideMenuLayers();
         void menuPopup.offsetWidth;
         menuPopup.classList.remove('no-fade');
+        menuBackdrop.classList.remove('no-fade');
 
         overlay.classList.remove('no-fade');
         overlay.classList.add('open');
@@ -602,12 +882,14 @@
         hoverDirty = true;
     }
 
-    // menu icon pressed: menu popup fades in, icon -> X
+    // menu icon pressed: the menu animates in over 0.5s (menu background 0 -> 80%, page blur 0 -> 5px,
+    // options fade in) while the icon morphs into the X
     function openMenu() {
         if (pageState !== 'page' || busy) return;
         pageState = 'menu';
         busy = true;
-        menuPopup.classList.add('open');            // 0.5s fade in
+        menuStart = performance.now();
+        overlay.classList.add('menu-open');
         menuPopup.setAttribute('aria-hidden', 'false');
         closeBtn.setAttribute('aria-label', 'Close');
         closeBtn.setAttribute('aria-expanded', 'true');
@@ -616,24 +898,38 @@
         hoverDirty = true;
     }
 
-    // menu option pressed: menu popup fades out (page popup is underneath), X -> menu icon
-    function pickMenuOption() {
-        if (pageState !== 'menu' || busy) return;
+    // click on the background / the selected option: the menu animation plays in reverse (0.5s)
+    function closeMenu() {
+        if (pageState !== 'menu') return;
         pageState = 'page';
         busy = true;
-        menuPopup.classList.remove('open');         // 0.5s fade out
+        overlay.classList.remove('menu-open');
         menuPopup.setAttribute('aria-hidden', 'true');
         closeBtn.setAttribute('aria-label', 'Menu');
         closeBtn.setAttribute('aria-expanded', 'false');
-        closeBtn.focus({ preventScroll: true });    // the option that had focus is going away
+        closeBtn.focus({ preventScroll: true });
         startMorph(0, () => { busy = false; syncHover(); });
         syncHover();
         hoverDirty = true;
     }
 
+    // another option picked: the page content is swapped for the new one, then the menu closes with
+    // the same 0.5s reverse animation as a click on the background
+    function selectMenuOption(link) {
+        if (pageState !== 'menu') return;
+        menuLinks.forEach((l) => {
+            const on = l === link;
+            l.classList.toggle('current', on);
+            if (on) l.setAttribute('aria-current', 'page'); else l.removeAttribute('aria-current');
+        });
+        loadTab(link.dataset.tab);
+        closeMenu();
+    }
+
     function closePage() {
-        if (pageState === 'closed' || busy) return;
-        const menuWasOpen = pageState === 'menu';
+        if (pageState === 'closed') return;
+        // the X can be pressed 0.2s after the menu started opening; the menu icon can't be pressed while it morphs back
+        if (pageState === 'menu' ? performance.now() - menuStart < X_READY_MS : busy) return;
         pageState = 'closed';
 
         // mouse on the X: let it keep rotating to the hovered position. Otherwise freeze it where it is.
@@ -643,12 +939,13 @@
         closeSvg.classList.remove('active');        // plays the draw animation in reverse
         closeBtn.classList.remove('show');          // 0.9s opacity fade
 
-        if (menuWasOpen) {
-            overlay.classList.add('no-fade');       // page popup: gone instantly...
-            menuPopup.classList.remove('open');     // ...only the menu popup fades (0.5s)
-            menuPopup.setAttribute('aria-hidden', 'true');
-        }
-        overlay.classList.remove('open');           // 0.5s fade (instant if .no-fade)
+        // page content, menu options and menu background vanish instantly (none of them has a transition
+        // once the overlay isn't .open / .menu-open); only the shared black background fades out (0.5s).
+        // The overlay has pointer-events: none straight away, so the homepage stays usable meanwhile.
+        hideMenuLayers();
+        stopListenScroll();
+        overlay.classList.remove('no-fade');
+        overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden', 'true');
 
         // homepage scrolls again right away
@@ -661,19 +958,24 @@
     document.addEventListener('click', (e) => {
         if (!(e.target instanceof Element)) return;
         const album = e.target.closest('.album');
-        if (!album) return;
+        if (!album || album.closest('#page-overlay')) return;   // LISTEN cards just follow their link
         e.preventDefault();                         // the href stays in the HTML for later, but isn't followed
         openPage(album);
     });
     closeBtn.addEventListener('click', () => {
-        if (busy) return;
-        if (pageState === 'page') openMenu();
+        if (pageState === 'page' && !busy) openMenu();
         else if (pageState === 'menu') closePage();
     });
-    menuPopup.addEventListener('click', (e) => {
-        if (e.target instanceof Element && e.target.closest('.menu-link')) pickMenuOption();   // purely aesthetic for now
+    // while the menu is open: another option loads that page, ANYTHING else (background, the selected option) closes the menu
+    overlay.addEventListener('click', (e) => {
+        if (pageState !== 'menu' || !(e.target instanceof Element)) return;
+        const link = e.target.closest('.menu-link:not(.current)');
+        if (link) selectMenuOption(link);
+        else closeMenu();
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePage(); });
+
+    overlay.addEventListener('scroll', () => { hoverDirty = true; }, { passive: true });
 
     renderIcon();
 
