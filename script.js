@@ -4,8 +4,9 @@
     /* ================================================================
        ALBUM DATA
        One entry per album, keyed by the album's id in index.html without the "album-" part
-       (id="album-the" -> the). Every album gets a menu made of its tabs + the required LISTEN tab.
-         tabs     menu options, in order (LISTEN is always added at the end)
+       (id="album-the" -> the). Every album gets a menu made of its tabs.
+         tabs     menu options, in order. Add 'listen' where you want the LISTEN option; if it is not
+                  in the array there is no LISTEN option at all
          editions platform -> list of editions. The platform name is the LISTEN category title
                   (YOUTUBE, SOUNDCLOUD...), its icon is icon/<platform>.png (skipped if missing).
                   An edition card shows <album>/<cover>.png (cover = optional id of a custom cover image),
@@ -16,7 +17,7 @@
     ================================================================ */
     const ALBUMS = {
         the: {
-            tabs: ['context', 'samples'],
+            tabs: ['context', 'samples', 'cover', 'listen'],
             editions: {
                 youtube: [
                     {
@@ -29,13 +30,13 @@
                     {
                         cover: '2022',
                         name: '2022 (instrumental)',
-                        link: 'https://youtube.com/watch?v=95Vt00onysI&list=PLJrzrdM2WSXKXzhorP7A3yFC8lXLPzHgE',
+                        link: 'https://soundcloud.com/nickjas/sets/thecowthatjumpedoverthemoonandkilledtherat',
                     },
                 ],
             },
         },
         interlude: {
-            tabs: ['context', 'samples'],
+            tabs: ['cover', 'listen'],
             editions: {
                 youtube: [
                     {
@@ -48,7 +49,7 @@
             },
         },
         indev: {
-            tabs: ['context', 'samples'],
+            tabs: ['cover', 'listen'],
             editions: {
                 youtube: [
                     {
@@ -123,6 +124,15 @@
             minDistance: 0.05,    // stop updating when this close to the target
             maxSpeed: 600,        // max change per second (px/s)
         },
+    };
+
+    // COVER page (zoom + drag viewer). Zoom 1 = 100% = one image pixel per DEVICE pixel.
+    // The slider runs from "fit to screen" (far left) to maxZoom (far right).
+    const COVER = {
+        maxZoom: 2,           // 200%
+        wheelStep: 1 / 12,    // slider travel per ctrl + wheel notch and per ctrl + / ctrl -
+        zoomSpeed: 15,        // how fast zoom eases towards its target (per second, higher = snappier)
+        panSpeed: 15,         // same for scrolling around the image
     };
 
     // Album box background fade. 0 = transparent at rest, 0.05 = 5% white on hover.
@@ -201,6 +211,7 @@
     ================================================================ */
     let lenis = null;
     let pageLenis = null;      // smooth scroll of the page popup (only while the LISTEN page is shown)
+    let coverView = null;      // the COVER page's zoom/drag viewer ({ tick, destroy }) while it is shown
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (window.Lenis && !reduceMotion) {
         lenis = new Lenis(LENIS);
@@ -499,6 +510,7 @@
 
         if (lenis) lenis.raf(now);
         if (pageLenis) pageLenis.raf(now);
+        if (coverView) coverView.tick(dt);
         for (const c of carousels) if (c.inner) c.inner.raf(now);
 
         if (hoverDirty && visible) {
@@ -681,10 +693,9 @@
     }
 
     /* ---- tabs + pages ---- */
-    // menu options of the opened album: its tabs, then LISTEN
+    // menu options of the opened album: exactly its tabs (LISTEN only shows up if it is in the array)
     function buildMenu(key) {
-        const tabs = ((ALBUMS[key] && ALBUMS[key].tabs) || []).map((t) => String(t).toLowerCase()).filter((t) => t !== 'listen');
-        tabs.push('listen');
+        const tabs = ((ALBUMS[key] && ALBUMS[key].tabs) || []).map((t) => String(t).toLowerCase());
         menuNav.textContent = '';
         pruneFade();
         menuLinks = tabs.map((tab, i) => {
@@ -726,7 +737,7 @@
             const icon = new Image();
             icon.alt = '';
             icon.draggable = false;
-            icon.onload = () => { title.prepend(icon); fitListenTitles(); };
+            icon.onload = () => { title.prepend(icon); };
             loadFirst(icon, iconUrls);
             cat.appendChild(title);
 
@@ -768,12 +779,325 @@
         pageContent.appendChild(root);
         cards.forEach(registerFade);                              // hover fade (after they are in the page)
 
-        // titles are as wide as one card (same as the homepage's stacked layout); cards stretch with the
-        // window, so re-fit whenever the list changes size
-        listenRO = new ResizeObserver(fitListenTitles);
-        listenRO.observe(root);
-        fitListenTitles();
         return root;
+    }
+
+    // any tab that has no page yet (context, samples...): a centred PAGE NOT FOUND
+    function showNotFound() {
+        const el = document.createElement('div');
+        el.className = 'page-missing';
+        el.textContent = 'PAGE NOT FOUND';
+        pageContent.appendChild(el);
+    }
+
+    // COVER page: the album cover on its own. Drag to move, wheel / pinch / slider to zoom.
+    // zoom 1 = 100% = one image pixel per device pixel. Minimum = fit to screen, maximum = COVER.maxZoom.
+    function showCover(album) {
+        const src = album.querySelector('.cover img');
+        if (!src) return;
+        const full = src.dataset.full;
+
+        const stage = document.createElement('div');
+        stage.className = 'cover-view';
+        const im = new Image();
+        im.alt = '';
+        im.draggable = false;
+        im.src = src.currentSrc || src.src;                       // whatever is already loaded, so there is no blank
+        stage.appendChild(im);
+
+        const ui = document.createElement('div');
+        ui.className = 'cover-ui';
+        const pct = document.createElement('button');
+        pct.type = 'button';
+        pct.className = 'link cover-pct';
+        pct.dataset.fade = 'link';
+        pct.setAttribute('aria-label', 'Toggle 100% / fit to screen');
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'cover-slider';
+        slider.min = '0';
+        slider.max = '1000';
+        slider.step = '1';
+        slider.value = '0';
+        slider.dataset.clickable = '';
+        slider.setAttribute('aria-label', 'Zoom');
+        ui.append(pct, slider);
+        stage.appendChild(ui);
+        pageContent.appendChild(stage);
+        registerFade(pct);
+
+        let nw = 0, nh = 0;                 // natural size of the image that is showing
+        let W = 0, H = 0, dpr = 1;          // stage size (css px), device pixel ratio
+        let fitZ = 1, maxZ = COVER.maxZoom;
+        let z = 1, tz = 1;                  // zoom now / zoom it is easing towards
+        let x = 0, y = 0;                   // image top-left on the stage (css px)
+        let ax = 0, ay = 0;                 // point the zoom is anchored to (stays put on screen)
+        let ready = false;
+        let panX = 0, panY = 0;             // scroll distance still to travel (eased out by tick)
+        let bx = 0, by = 0;                 // zoom box: top-left corner on the stage (css px)
+        let boxFree = false;                // true once the box has been dragged: it then stays where it was put
+
+        const clampZ = (v) => clamp(v, fitZ, maxZ);
+        const sOf = (v) => (maxZ > fitZ ? clamp(Math.log(v / fitZ) / Math.log(maxZ / fitZ), 0, 1) : 0);
+        const zOf = (s) => fitZ * Math.pow(maxZ / fitZ, s);     // each slider step = the same zoom ratio
+        const isFit = () => Math.abs(tz - fitZ) <= fitZ * 0.002;
+
+        function clampPan() {
+            const w = nw * z / dpr, h = nh * z / dpr;
+            x = w <= W ? (W - w) / 2 : clamp(x, W - w, 0);      // smaller than the screen: centred; bigger: edges can't come inside
+            y = h <= H ? (H - h) / 2 : clamp(y, H - h, 0);
+        }
+
+        function render() {
+            im.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${z / dpr})`;
+            const label = Math.round(z * 100) + '%';
+            if (pct.textContent !== label) pct.textContent = label;
+            const sv = Math.round(sOf(tz) * 1000);
+            if (+slider.value !== sv) slider.value = sv;
+            slider.style.setProperty('--fill', (sv / 10) + '%');
+        }
+
+        // zoom to nz keeping the screen point (px, py) where it is
+        function zoomAt(nz, px, py) {
+            const k = nz / z;
+            x = px - (px - x) * k;
+            y = py - (py - y) * k;
+            z = nz;
+            clampPan();
+        }
+
+        // Place the zoom box. Everything here is plain numbers (the stage size and the box's own layout size,
+        // which a translate doesn't change), so it can't drift: the box is always fully inside the stage.
+        // Not dragged yet = centred on the bottom edge.
+        function layoutBox() {
+            const w = stage.clientWidth, h = stage.clientHeight;
+            if (!w || !h) return;
+            const bw = ui.offsetWidth, bh = ui.offsetHeight;
+            if (!boxFree) { bx = (w - bw) / 2; by = h - bh; }
+            bx = clamp(bx, 0, Math.max(0, w - bw));
+            by = clamp(by, 0, Math.max(0, h - bh));
+            ui.style.translate = `${bx}px ${by}px`;
+        }
+
+        function measure(forceFit) {
+            if (!nw) return;
+            const w = stage.clientWidth, h = stage.clientHeight;
+            if (!w || !h) return;
+            const atFit = forceFit || !ready || isFit();
+            ready = true;
+            W = w; H = h; dpr = window.devicePixelRatio || 1;
+            fitZ = Math.min(W * dpr / nw, H * dpr / nh);
+            maxZ = Math.max(COVER.maxZoom, fitZ);
+            if (atFit) { z = tz = fitZ; } else { z = clampZ(z); tz = clampZ(tz); }
+            ax = W / 2; ay = H / 2;
+            clampPan();
+            render();
+        }
+
+        // the first (small) image is replaced by the full one: same size on screen, just sharper
+        function setNatural(w, h) {
+            if (!w || !h) return;
+            const wasFit = !nw || isFit();
+            if (nw) { const k = nw / w; z *= k; tz *= k; }
+            nw = w; nh = h;
+            im.style.width = w + 'px';
+            im.style.height = h + 'px';
+            measure(wasFit);
+        }
+
+        if (im.naturalWidth) setNatural(im.naturalWidth, im.naturalHeight);
+        else im.onload = () => { if (!nw) setNatural(im.naturalWidth, im.naturalHeight); };
+        if (full) {
+            const big = new Image();
+            big.onload = () => {
+                (big.decode ? big.decode() : Promise.resolve()).catch(() => { }).then(() => {
+                    if (!stage.isConnected) return;
+                    im.src = full;
+                    setNatural(big.naturalWidth, big.naturalHeight);
+                });
+            };
+            big.src = full;
+        }
+
+        const ro = new ResizeObserver(() => { measure(); layoutBox(); });
+        ro.observe(stage);
+        layoutBox();
+
+        const zoomTo = (v, px, py) => { tz = clampZ(v); ax = px; ay = py; };
+
+        /* ---- drag (mouse) + drag / pinch (touch) ---- */
+        const ptrs = new Map();
+        let last = null;                                   // pinch: midpoint + finger distance
+        let tap = null;                                    // the press that is still a candidate for a tap
+        let lastTap = null;                                // the previous tap (for double tap)
+        const pinch = () => {
+            const [a, b] = [...ptrs.values()];
+            return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+        };
+
+        stage.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.cover-ui')) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            try { stage.setPointerCapture(e.pointerId); } catch (_) { }
+            tz = z;                                        // grabbing stops a zoom that is still easing...
+            panX = panY = 0;                               // ...and a scroll
+            tap = ptrs.size === 1 ? { t: performance.now(), x: e.clientX, y: e.clientY, ok: true } : null;
+            if (ptrs.size === 2) last = pinch();
+        });
+
+        stage.addEventListener('pointermove', (e) => {
+            const p = ptrs.get(e.pointerId);
+            if (!p) return;
+            if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap.ok = false;   // it moved: a drag, not a tap
+            const px = p.x, py = p.y;
+            p.x = e.clientX; p.y = e.clientY;
+            if (ptrs.size === 1) {
+                x += p.x - px;
+                y += p.y - py;
+            } else if (ptrs.size === 2) {
+                const m = pinch();
+                x += m.x - last.x;                         // the two fingers' midpoint drags the image...
+                y += m.y - last.y;
+                if (last.d > 0 && m.d > 0) zoomAt(clampZ(z * m.d / last.d), m.x, m.y);   // ...their distance zooms it
+                tz = z;
+                last = m;
+            }
+            clampPan();
+            render();
+        });
+
+        const lift = (e) => {
+            if (!ptrs.delete(e.pointerId)) return;
+            if (ptrs.size === 2) last = pinch();
+        };
+        stage.addEventListener('pointerup', (e) => {
+            const now = performance.now();
+            const wasTap = tap && tap.ok && ptrs.size === 1 && ptrs.has(e.pointerId) && now - tap.t < 400;
+            lift(e);
+            if (!wasTap) return;
+            // two quick taps in (about) the same spot = a click on the percentage
+            if (lastTap && now - lastTap.t < 350 && Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) < 30) {
+                lastTap = null;
+                togglePct();
+            } else {
+                lastTap = { t: now, x: tap.x, y: tap.y };
+            }
+        });
+        stage.addEventListener('pointercancel', (e) => { tap = null; lift(e); });
+
+        /* ---- wheel ----
+           plain: scrolls the image, smoothly (up / down, and left / right on a trackpad) | shift: left / right
+           ctrl (cmd): zoom, never the browser's own zoom. Trackpad pinch (small deltas) zooms smoothly,
+           a ctrl + mouse wheel notch moves the slider 1/20. */
+        const notch = (d, px, py) => zoomTo(zOf(clamp(sOf(tz) - d / 100 * COVER.wheelStep, 0, 1)), px, py);
+        stage.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            let dx = e.deltaX, dy = e.deltaY;
+            if (e.deltaMode === 1) { dx *= 40; dy *= 40; } else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
+            if (e.ctrlKey || e.metaKey) {
+                if (Math.abs(dy) < 30) zoomTo(tz * Math.exp(-dy * 0.01), e.clientX, e.clientY);
+                else notch(dy, e.clientX, e.clientY);
+                return;
+            }
+            // not applied here: it is added to the distance still to travel, and tick() eases it out
+            if (e.shiftKey) {
+                panX -= Math.abs(dx) > Math.abs(dy) ? dx : dy;   // browsers differ in which axis shift + wheel reports
+            } else {
+                panX -= dx;
+                panY -= dy;
+            }
+        }, { passive: false });
+
+        /* ---- keyboard: ctrl + / ctrl - zoom one slider step, ctrl 0 = fit to screen (not the browser's zoom) ---- */
+        const onKey = (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+            const dir = (e.key === '=' || e.key === '+') ? 1 : (e.key === '-' || e.key === '_') ? -1 : e.key === '0' ? 0 : null;
+            if (dir === null) return;
+            e.preventDefault();
+            if (pageState !== 'page') return;
+            if (dir === 0) zoomTo(fitZ, W / 2, H / 2);
+            else zoomTo(zOf(clamp(sOf(tz) + dir * COVER.wheelStep, 0, 1)), W / 2, H / 2);
+        };
+        document.addEventListener('keydown', onKey);
+
+        // Safari's own pinch-zoom gesture: not wanted here
+        for (const t of ['gesturestart', 'gesturechange', 'gestureend']) {
+            stage.addEventListener(t, (e) => e.preventDefault());
+        }
+
+        /* ---- slider + percentage ---- */
+        slider.addEventListener('input', () => zoomTo(zOf(+slider.value / 1000), W / 2, H / 2));
+        // at 100%: fit to screen. Anywhere else: 100%. (The percentage and a double tap on the image both do this.)
+        const togglePct = () => zoomTo(Math.abs(tz - 1) < 0.005 ? fitZ : 1, W / 2, H / 2);
+        let boxMoved = false;                              // the last press on the box was a drag: its click doesn't count
+        pct.addEventListener('click', () => {
+            if (boxMoved) { boxMoved = false; return; }
+            togglePct();
+        });
+
+        /* ---- drag the zoom box ----
+           Grab it anywhere ABOVE the slider (the percentage and the space around it) and it follows the cursor.
+           The slider and the box beside / under it do nothing. Listening on window, so a fast drag can't lose it. */
+        let boxDrag = null;
+        ui.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (e.clientY >= slider.getBoundingClientRect().top) return;
+            boxMoved = false;
+            boxDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, bx, by, moved: false };
+        });
+        const boxMove = (e) => {
+            if (!boxDrag || e.pointerId !== boxDrag.id) return;
+            const dx = e.clientX - boxDrag.sx, dy = e.clientY - boxDrag.sy;
+            if (!boxDrag.moved && Math.hypot(dx, dy) < 4) return;       // a click on the percentage stays a click
+            boxDrag.moved = boxMoved = true;
+            boxFree = true;
+            bx = boxDrag.bx + dx;
+            by = boxDrag.by + dy;
+            layoutBox();                                                // clamps: it can't leave the stage
+        };
+        const boxUp = (e) => { if (boxDrag && e.pointerId === boxDrag.id) boxDrag = null; };
+        window.addEventListener('pointermove', boxMove);
+        window.addEventListener('pointerup', boxUp);
+        window.addEventListener('pointercancel', boxUp);
+
+        coverView = {
+            tick(dt) {
+                let moved = false;
+                if (z !== tz) {
+                    let nz = z + (tz - z) * (1 - Math.exp(-dt * COVER.zoomSpeed));
+                    if (Math.abs(nz - tz) < tz * 0.0004) nz = tz;
+                    zoomAt(nz, ax, ay);
+                    moved = true;
+                }
+                if (panX || panY) {
+                    // scrolling: travel a fraction of what is left every frame (fast first, then settles)
+                    const k = 1 - Math.exp(-dt * COVER.panSpeed);
+                    const sx = Math.abs(panX) < 0.1 ? panX : panX * k;
+                    const sy = Math.abs(panY) < 0.1 ? panY : panY * k;
+                    const px = x, py = y;
+                    x += sx; y += sy;
+                    clampPan();
+                    panX -= sx; panY -= sy;
+                    if (Math.abs(x - px - sx) > 0.01) panX = 0;      // ran into an edge: nothing left to travel
+                    if (Math.abs(y - py - sy) > 0.01) panY = 0;
+                    if (x !== px || y !== py) moved = true;
+                }
+                if (moved) render();
+            },
+            destroy() {
+                ro.disconnect();
+                document.removeEventListener('keydown', onKey);
+                window.removeEventListener('pointermove', boxMove);
+                window.removeEventListener('pointerup', boxUp);
+                window.removeEventListener('pointercancel', boxUp);
+            },
+        };
+        return stage;
+    }
+
+    function stopCover() {
+        if (coverView) { coverView.destroy(); coverView = null; }
     }
 
     // Smooth scrolling for the LISTEN page only: the popup (overlay) is the scroll container. Other pages
@@ -792,32 +1116,16 @@
         overlay.classList.remove('no-scrollbar');
     }
 
-    // font size so that [icon + gap + title text] is exactly one album card wide. Everything is measured
-    // (all of it scales with the font size), so it works for any icon shape, png or svg.
-    let listenRO = null;
-    function fitListenTitles() {
-        for (const cat of pageContent.querySelectorAll('.listen-cat')) {
-            const title = cat.querySelector('.listen-title');
-            const card = cat.querySelector('.album');
-            const label = title.querySelector('span');
-            if (!card || !label) continue;
-            const cs = getComputedStyle(title);
-            const fs = parseFloat(cs.fontSize);
-            const icon = title.querySelector('img');
-            const total = label.offsetWidth + (icon ? icon.offsetWidth + (parseFloat(cs.columnGap) || 0) : 0);
-            if (total && fs) title.style.fontSize = Math.floor(card.offsetWidth * fs / total) + 'px';
-        }
-    }
-
-    // replace the page content with the page for a tab (context / samples: the cover for now)
+    // replace the page content with the page for a tab (cover: zoomable cover, listen: platforms, any other tab: PAGE NOT FOUND for now)
     function loadTab(tab) {
-        if (listenRO) { listenRO.disconnect(); listenRO = null; }
         stopListenScroll();
+        stopCover();
         pageContent.textContent = '';
         pruneFade();
         overlay.scrollTop = 0;
         if (tab === 'listen') startListenScroll(showListen(currentKey));
-        else if (currentAlbum) showTestContent(currentAlbum);
+        else if (tab === 'cover' && currentAlbum) showCover(currentAlbum);
+        else showNotFound();
         hoverDirty = true;
     }
 
@@ -944,6 +1252,7 @@
         // The overlay has pointer-events: none straight away, so the homepage stays usable meanwhile.
         hideMenuLayers();
         stopListenScroll();
+        stopCover();
         overlay.classList.remove('no-fade');
         overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden', 'true');

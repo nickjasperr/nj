@@ -158,9 +158,41 @@ html.lenis body {
     overflow: clip;
 }
 
+/* No focus square on buttons, links, sliders or anything else: click one and then press shift / tab / space and
+   nothing gets drawn around it (it still takes focus, you just don't see a ring). */
+:focus,
 :focus-visible {
-    outline: 1px solid var(--fg);
-    outline-offset: 4px;
+    outline: none;
+}
+
+button::-moz-focus-inner {
+    border: 0;
+}
+
+/* ...except where you type: text fields keep a soft ring so you can see where the caret is */
+input:not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.35);
+    outline-offset: 2px;
+}
+
+/* Nothing on the site can be selected (text, images, buttons), and no long-press menu on iOS.
+   Anything you type in stays selectable, so input fields keep working. Delete these two rules to get selection back. */
+html {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable],
+[contenteditable] * {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 /* Native drag ghosts are blocked in the script (dragstart on a/img/button).
@@ -606,6 +638,117 @@ button {
     -webkit-user-select: none;
 }
 
+/* tabs with no page yet: PAGE NOT FOUND, centred on the screen */
+.page-missing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--pad);
+    font-size: 1.6rem;
+    text-align: center;
+}
+
+/* COVER page (built by script.js): the cover on a stage you can drag / zoom. The image is laid out at its
+   natural pixel size and moved + scaled with a transform from script.js. touch-action: none turns off the
+   browser's own touch panning and pinch zoom on the stage. The controls sit on a pure black box attached to
+   the bottom of the page, and can be dragged by the part above the slider. */
+.cover-view {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.cover-view img {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: none;
+    transform-origin: 0 0;
+    will-change: transform;
+    pointer-events: none;
+}
+
+.cover-ui {
+    --cover-gap: 0.5rem;                /* padding above the percentage and under the slider */
+    /* Fixed size, and top-left anchored: script.js places the box with a translate, using offsetWidth /
+       offsetHeight for the maths (they ignore transforms). Default spot = centred, on the bottom edge. */
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 11.5rem;                     /* the 10rem slider + 0.75rem of padding each side */
+    padding: var(--cover-gap) 0.75rem calc(var(--cover-gap) + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--cover-gap) * 2 / 3);   /* percentage -> slider */
+    background: #000;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.cover-pct {
+    font: inherit;
+    line-height: 1;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* The bar: the filled part is 3px thick, the rest is a thin (1.5px) line, both solid white. The thumb is 7px.
+   The input itself is 20px tall so it is easy to grab, the negative margin keeps that out of the spacing. */
+.cover-slider {
+    --fill: 0%;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10rem;
+    height: 20px;
+    margin: -6.5px 0;                   /* (20px - 7px thumb) / 2 */
+    padding: 0;
+    background: transparent;
+    touch-action: none;
+}
+
+.cover-slider::-webkit-slider-runnable-track {
+    height: 3px;
+    background:
+        linear-gradient(#fff, #fff) 0 0 / var(--fill) 100% no-repeat,
+        linear-gradient(#fff, #fff) 0 50% / 100% 1.5px no-repeat;
+}
+
+.cover-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 7px;
+    height: 7px;
+    margin-top: -2px;                   /* (track 3px - thumb 7px) / 2 */
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.cover-slider::-moz-range-track {
+    height: 3px;
+    background: linear-gradient(#fff, #fff) 0 50% / 100% 1.5px no-repeat;
+}
+
+.cover-slider::-moz-range-progress {
+    height: 3px;
+    background: #fff;
+}
+
+.cover-slider::-moz-range-thumb {
+    width: 7px;
+    height: 7px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+}
+
 /* scrollbar hidden while the LISTEN page is shown (script.js toggles this; the page still scrolls) */
 .page-overlay.no-scrollbar {
     scrollbar-width: none;
@@ -633,6 +776,7 @@ button {
     align-items: center;
     justify-content: center;
     gap: var(--icon-gap, 0.6em);        /* padding between the icon and the name */
+    font-size: calc(1.6 * var(--link-size, 1rem));   /* 1.6x the footer link / menu option text (1rem) */
     margin-bottom: 0.75rem;
 }
 

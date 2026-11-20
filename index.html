@@ -75,7 +75,6 @@
                         <div class="scroller">
                             <div class="track">
                                 <a class="album" data-fade="card" id="album-the"
-                                    href="https://youtube.com/watch?v=95Vt00onysI&list=PLJrzrdM2WSXKXzhorP7A3yFC8lXLPzHgE"
                                     target="_blank" rel="noopener">
                                     <div class="cover"><img src="covers/the64.png" data-full="covers/the.png" alt=""
                                             draggable="false"></div>
@@ -83,7 +82,6 @@
                                 </a>
 
                                 <a class="album" data-fade="card" id="album-interlude"
-                                    href="https://youtube.com/watch?v=jyHPsgV9p6w&list=PLJrzrdM2WSXJ7EXILNpxLMrXTTR95toSh"
                                     target="_blank" rel="noopener">
                                     <div class="cover"><img src="covers/interlude64.png"
                                             data-full="covers/interlude.png" alt="" draggable="false"></div>
@@ -104,7 +102,6 @@
                         <div class="scroller">
                             <div class="track">
                                 <a class="album" data-fade="card" id="album-indev"
-                                    href="https://youtube.com/watch?v=JaP1nz73gEE&list=PLEWeFT0ctV_Y" target="_blank"
                                     rel="noopener">
                                     <div class="cover"><img src="covers/indev64.png" data-full="covers/indev.png" alt=""
                                             draggable="false"></div>
@@ -154,13 +151,13 @@
          The white ring (svg-elem-2) never changes. -->
     <button class="page-close" id="page-close" type="button" aria-label="Menu" aria-expanded="false">
         <svg viewBox="0 0 67.733334 67.733333" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-            <defs>
-                <filter id="close-aa" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
-                    <feGaussianBlur stdDeviation="0.8" />
-                </filter>
-            </defs>
             <circle class="svg-elem-1" cx="33.866665" cy="33.866665" r="33.866665" />
             <g fill="none" stroke="#fff" stroke-width="4.23333" stroke-linecap="round" stroke-linejoin="round">
+                <!-- ring anti-alias: two faint, slightly fatter copies of the ring sit behind the crisp one. They only
+                     add a soft 0.5px ramp on each edge, the ring itself stays sharp and pure white. Same class as the
+                     ring, so they draw in / out with it. Softer edge: raise the stroke-opacity, harder: lower it. -->
+                <circle class="svg-elem-2" cx="33.866665" cy="33.866669" r="25.400002" stroke-width="5.8208" stroke-opacity="0.18" />
+                <circle class="svg-elem-2" cx="33.866665" cy="33.866669" r="25.400002" stroke-width="5.0271" stroke-opacity="0.32" />
                 <circle class="svg-elem-2" cx="33.866665" cy="33.866669" r="25.400002" />
                 <!-- the three bars. "d" of top + bottom is rewritten by script.js. pathLength="1" keeps the draw-in dash
                      exactly one bar long whatever shape the bar is in (see svg.css) -->

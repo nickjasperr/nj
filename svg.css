@@ -32,7 +32,7 @@
     }
 }
 
-/* ---- element 1: black backing disc (the only fill) ---- */
+/* ---- element 1: black backing disc (the only fill), pure black ---- */
 .page-close svg .svg-elem-1 {
     fill: transparent;
     transition: fill 0.5s cubic-bezier(0.215, 0.61, 0.355, 1) 0.3s;
@@ -54,17 +54,8 @@
     stroke-dashoffset: 0;
 }
 
-/* 0.5px anti-alias on the white ring (filter #close-aa is in the button's svg, in index.html).
-   Off on touch screens, same rule as --aa-blur in style.css. */
-.page-close svg .svg-elem-2 {
-    filter: url(#close-aa);
-}
-
-@media (hover: none) and (pointer: coarse) {
-    .page-close svg .svg-elem-2 {
-        filter: none;
-    }
-}
+/* The ring's anti-alias is in index.html: two faint wider copies of the ring (same .svg-elem-2 class, so they
+   share the dash animation above) sit behind the crisp one. No filter, no blur. */
 
 /* ---- elements 3, 4, 5: the bars (top, bottom, middle) ----
    Each <path> has pathLength="1" in index.html, so a dash of 1 is always exactly one whole bar,
