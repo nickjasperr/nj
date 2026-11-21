@@ -6,9 +6,9 @@
   in script.js). Opened directly, page.js replaces it with the 404 page.
 
   WHERE THINGS ARE (top to bottom):
-    1. CONFIG      timing, image, animations defaults, fade out. Everything is measured in SCREENS of scroll
+    1. CONFIG      timing, image, grain, fade out. Everything is measured in SCREENS of scroll
                    (1 = scrolling down by one screen height).
-    2. STYLE       the look of the text, the animation presets, and the PLACEMENT of every line.
+    2. STYLE       the animation presets, and the look + PLACEMENT of every line (one rule per line id).
     3. THE STORY   one <p class="line"> per line, with its own data-at (when it comes in).
     4. ENGINE      reads the scroll, nothing else. You shouldn't need to touch it.
 
@@ -46,29 +46,31 @@
             },
 
             // ONE number to speed up / slow down the whole story. Multiplies every time below (data-at, len, hold,
-            // out, pan, fadeOut, length). 1 = as written. 2 = twice as much scrolling for everything. 0.5 = half.
-            stretch: 1,
+            // out, pan, fadeOut, length). 1 = as written. 0.5 = twice as fast (half the scrolling). 2 = twice as slow.
+            stretch: 0.5,
 
-            // How much scrolling the page has in total, in screens.
-            length: 14.8,
+            // How much scrolling the page has in total, in screens (before stretch).
+            length: 14.5,
 
             // The square window sliding from the top of the picture to the bottom, between these scroll positions.
             // before "from" it sits at the top, after "to" it stays at the bottom.
-            pan: { from: 0, to: 13.6, ease: 'linear' },
+            pan: { from: 0, to: 13.3, ease: 'linear' },
 
             // After the story: the background fades to black between these positions.
             // text: true makes the lines fade away with it. false = they stay.
-            fadeOut: { from: 13.6, to: 14.8, ease: 'linear', text: false },
+            // (a line with data-sync="fadeOut" comes in exactly during this fade)
+            fadeOut: { from: 13.3, to: 14.5, ease: 'linear', text: false },
 
             // Defaults for every line. Each can be overridden on a line with data-len, data-hold, data-out,
-            // data-anim, data-ease (see the story below).
+            // data-anim, data-ease (see the story below). len + hold + out = the line's whole slot. Lines that sit
+            // in the same spot need that to be at most the gap to the next line, or they overlap while swapping.
             line: {
-                anim: 'rise',    // fade, rise, drop, left, right, blur, zoom, wipe, words, type  (defined in the STYLE below)
+                anim: 'fade',    // fade, rise, drop, left, right, blur, zoom, wipe, words, type, riseup, slide  (defined in STYLE below)
                 ease: 'out',     // linear, in, out, inOut
-                len: 0.5,        // how much scrolling the line takes to come in
-                hold: 0.35,      // how long it stays fully visible after that. 'stay' = never leaves
-                out: 0.4,        // how much scrolling it takes to leave (the same animation, played backwards)
-                gap: 1,          // a line with no data-at comes in this long after the one before it
+                len: 0.3,        // how much scrolling the line takes to come in
+                hold: 0.4,       // how long it stays fully visible after that. 'stay' = never leaves
+                out: 0.3,        // how much scrolling it takes to leave
+                gap: 1.1,        // a line with no data-at comes in this long after the one before it
             },
 
             // Scroll feel for this page only, on top of the site's settings (see LENIS in script.js).
@@ -86,8 +88,17 @@
     ============================================================ -->
     <style>
         :root {
-            --dim: 0.3;         /* black over the picture so the text can be read (0 = none, 1 = black) */
+            --dim: 0.3;         /* black over the picture (0 = none, 1 = black) */
             --size: clamp(0.95rem, min(1.7vw, 2.4vh), 1.5rem);     /* text size: scales with the screen */
+            --edge: var(--pad);                                    /* gap between text and the screen edge */
+            --bottom: var(--pad);                                  /* same, for text at the bottom (see touch screens below) */
+        }
+
+        /* touch screens: the menu button is at the bottom right, so bottom text sits above it */
+        @media (hover: none), (pointer: coarse) {
+            :root {
+                --bottom: calc(var(--pad) * 2 + var(--close-size));
+            }
         }
 
         /* ---------- the background: a square window into the picture ----------
@@ -148,11 +159,15 @@
         }
 
         /* ---------- the text ----------
-           --p (0 -> 1) is set by the script on every line: how far in the line is. Everything below is just
-           "what does --p do", so to change an animation or make a new one, edit / add a [data-anim] rule. */
+           The script sets three numbers (0 -> 1) on every line:
+             --pin   how far in the line is (comes in: 0 -> 1, then stays 1)
+             --pout  how far out it is (leaves: 0 -> 1)
+             --p     both together: 0 -> 1 -> 0, the plain "how visible is it"
+           Everything below is just "what do these do", so to change an animation or make a new one,
+           edit / add a [data-anim] rule. No shadows anywhere. */
         .stage {
             position: fixed;
-            inset: var(--pad);
+            inset: 0;
             pointer-events: none;
         }
 
@@ -162,8 +177,11 @@
             max-width: min(32ch, 78%);
             font-size: var(--size);
             line-height: 1.55;
-            text-shadow: 0 0 0.6em rgba(0, 0, 0, 0.65), 0 0 0.15em rgba(0, 0, 0, 0.8);
             opacity: var(--p, 0);
+        }
+
+        .line.off {
+            visibility: hidden;         /* fully out: not seen, not clickable, not focusable */
         }
 
         .line[data-anim="rise"]  { translate: 0 calc((1 - var(--p, 0)) * 1.6em); }
@@ -173,6 +191,17 @@
         .line[data-anim="blur"]  { filter: blur(calc((1 - var(--p, 0)) * 0.6em)); }
         .line[data-anim="zoom"]  { scale: calc(0.85 + var(--p, 0) * 0.15); }
         .line[data-anim="wipe"]  { opacity: 1; clip-path: inset(-0.3em calc((1 - var(--p, 0)) * 100%) -0.3em -0.3em); }
+
+        /* riseup: slides in from below while fading in, then slides out upwards until it is off the screen */
+        .line[data-anim="riseup"] {
+            opacity: var(--pin, 0);
+            translate: 0 calc((1 - var(--pin, 0)) * 3em - var(--pout, 0) * 110vh);
+        }
+
+        /* slide: slides in from the left while fading in, slides out to the right while fading out */
+        .line[data-anim="slide"] {
+            translate: calc((1 - var(--pin, 0)) * -10vw + var(--pout, 0) * 10vw) 0;
+        }
 
         /* words / type: the script cuts the line into words / letters (.u). Each one has its number (--i) and
            how many there are (--n), so --p * --n - --i is "how far in is this one" */
@@ -188,25 +217,124 @@
             white-space: nowrap;
         }
 
+        /* links inside a line: a faint underline, solid on hover. Only clickable while the line is showing. */
+        .line a {
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 0.3em;
+            text-decoration-color: rgba(255, 255, 255, 0.5);
+            transition: text-decoration-color 0.2s linear;
+            pointer-events: none;
+        }
+
+        .line.live a {
+            pointer-events: auto;
+        }
+
+        .line a:hover {
+            text-decoration-color: #fff;
+        }
+
+        /* .fit: a line that must keep its exact line breaks (white-space: nowrap). On a narrow screen the text
+           shrinks just enough that the longest line (--chars letters) still fits between the edges. */
+        .line.fit {
+            white-space: nowrap;
+            max-width: none;
+            font-size: min(var(--size), calc((100vw - 2 * var(--edge)) / (var(--chars) * 0.612)));
+        }
+
         /* ---------- PLACEMENT: where every line sits ----------
-           Anything goes here: left / right / top / bottom (in % of the screen minus the edge padding),
-           transform, text-align, max-width, font-size, a different color... Don't use `translate` or
-           `scale` (the animations use those); `transform` is free.
-           The menu button is top right on a mouse screen, bottom right on a touch screen.
-           Right now: odd lines upper left, even lines lower right, the last one in the middle. */
-        #l1  { left: 0;  top: 12%; }
-        #l2  { right: 0; bottom: 14%; text-align: right; }
-        #l3  { left: 0;  top: 16%; }
-        #l4  { right: 0; bottom: 18%; text-align: right; }
-        #l5  { left: 0;  top: 10%; }
-        #l6  { right: 0; bottom: 12%; text-align: right; }
-        #l7  { left: 0;  top: 18%; }
-        #l8  { right: 0; bottom: 16%; text-align: right; }
-        #l9  { left: 0;  top: 12%; }
-        #l10 { right: 0; bottom: 14%; text-align: right; }
-        #l11 { left: 0;  top: 16%; }
-        #l12 { right: 0; bottom: 18%; text-align: right; }
-        #l13 { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; max-width: min(40ch, 90%); }
+           left / right / top / bottom, transform, text-align, max-width, font-size, color... anything goes.
+           Don't use `translate` or `scale` here (the animations use those); `transform` is free.
+           --edge and --bottom are the gaps to the screen edge. The menu button is top right on a mouse
+           screen, bottom right on a touch screen (--bottom already stays clear of it). */
+
+        /* 1  centred, middle of the upper half, black */
+        #l1 {
+            left: 50%;
+            top: 25%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #000;
+        }
+
+        /* 2  bottom left corner, left aligned, lines break as written */
+        #l2 {
+            left: var(--edge);
+            bottom: var(--bottom);
+            text-align: left;
+            --chars: 42;
+        }
+
+        /* 3  bottom centre */
+        #l3 {
+            left: 50%;
+            bottom: var(--bottom);
+            transform: translateX(-50%);
+            text-align: center;
+        }
+
+        /* 4  bottom right corner, right aligned, lines break as written */
+        #l4 {
+            right: var(--edge);
+            bottom: var(--bottom);
+            text-align: right;
+            --chars: 36;
+        }
+
+        /* 5  the whole width of the bottom. The text size is worked out so it fits on one line when the screen is
+              wide enough (138 = number of letters + a few spare), on a narrow screen it wraps and fills the width */
+        #l5 {
+            left: var(--edge);
+            right: var(--edge);
+            bottom: var(--bottom);
+            width: auto;
+            max-width: none;
+            text-align: justify;
+            font-size: max(0.8rem, calc((100vw - 2 * var(--edge)) / (138 * 0.612)));
+        }
+
+        /* 6  top, centred */
+        #l6 {
+            left: 50%;
+            top: var(--edge);
+            transform: translateX(-50%);
+            text-align: center;
+        }
+
+        /* 7 to 10  vertically centred, left aligned. All four in the same spot, one after the other */
+        #l7, #l8, #l9, #l10 {
+            left: var(--edge);
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: left;
+        }
+
+        /* 11  dead centre */
+        #l11 {
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        /* 12  vertically centred, right aligned */
+        #l12 {
+            right: var(--edge);
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: right;
+        }
+
+        /* 13  centred, comes in as the background goes */
+        #l13 {
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            max-width: min(40ch, 90%);
+        }
 
         /* ---------- scroll length + debug readout ---------- */
         .track {
@@ -242,43 +370,45 @@
          3. THE STORY
          data-at    scroll position (in screens) where the line starts coming in. Leave it out and the line
                     follows the one before it by CONFIG.line.gap.
-         Optional on any line: data-anim, data-ease, data-len, data-hold ("stay" = never leaves), data-out
-         Placement is in the STYLE above, by id.
+         Optional on any line: data-anim, data-ease, data-len, data-hold ("stay" = never leaves), data-out,
+                    data-sync="fadeOut" (comes in exactly while the background fades out, ignores data-at / data-len)
+         Placement and colour are in the STYLE above, by id.
     ============================================================ -->
     <div class="stage" id="stage">
-        <p class="line" id="l1" data-at="0.3" data-anim="fade">Mid-2021, I was 14.</p>
+        <p class="line" id="l1" data-at="0.3">Mid-2021, I was 14.</p>
 
-        <p class="line" id="l2" data-at="1.3">I went on summer vacation to Charlevoix with the neighbor's RV. We stood at Chalet Mirador for a few days.</p>
+        <p class="line fit" id="l2" data-at="1.2">I went on summer vacation<br>to Charlevoix with the neighbor's RV.<br>We stood at <a href="https://www.miradorsurlefief.com/fr/chalet/chalet-mirador-3" target="_blank" rel="noopener">Chalet Mirador</a> for a few days.</p>
 
-        <p class="line" id="l3" data-at="2.3">I remember sitting in the RV looking out the window admiring everything, filming alot of it.</p>
+        <p class="line" id="l3" data-at="2.3" data-anim="riseup" data-ease="inOut" data-out="0.6">I remember sitting in the RV looking out the window admiring everything, filming alot of it.</p>
 
-        <p class="line" id="l4" data-at="3.3">I had recently discovered Lil Peep, and with him The Microphones.</p>
+        <p class="line fit" id="l4" data-at="3.4">I had recently discovered Lil Peep,<br>and with him, The Microphones.</p>
 
-        <p class="line" id="l5" data-at="4.3">I brought my dad's electric guitar (no amp). Many nights in my room and in the living room, I remember playing Headless Horseman alone.</p>
+        <p class="line" id="l5" data-at="4.5">I brought my dad's electric guitar (no amp). Many nights in my room and in the living room, I remember playing Headless Horseman alone.</p>
 
-        <p class="line" id="l6" data-at="5.3" data-anim="blur">I felt meaning.</p>
+        <p class="line" id="l6" data-at="5.6">I felt meaning.</p>
 
-        <p class="line" id="l7" data-at="6.3">I slept in a room on the second story with three beds: one twin by the window, another by the wall, and a double in the center.</p>
+        <p class="line" id="l7" data-at="6.7">I slept in a room on the second story with three beds: one twin by the window, another by the wall, and a double in the center.</p>
 
-        <p class="line" id="l8" data-at="7.3">The beds, and especially pillows, were blissfully comfortable and tepid.</p>
+        <p class="line" id="l8" data-at="7.8">The beds, and especially pillows, were blissfully comfortable and tepid.</p>
 
-        <p class="line" id="l9" data-at="8.2">I remember listening to the trees rustling in the breeze creating natural white noise, like waves by the ocean.</p>
+        <p class="line" id="l9" data-at="8.9">I remember listening to the trees rustling in the breeze creating natural white noise, like waves by the ocean.</p>
 
-        <p class="line" id="l10" data-at="9.2">My mom would get angry every time, worried I'd get sick. Well I'd die to miss it.</p>
+        <p class="line" id="l10" data-at="10">My mom would get angry every time, worried I'd get sick. Well I'd die to miss it.</p>
 
-        <p class="line" id="l11" data-at="10.2">This vacation, I believe, forever changed the path I'd take.</p>
+        <p class="line" id="l11" data-at="11.1" data-anim="slide" data-ease="inOut">This vacation, I believe, forever changed the path I'd take.</p>
 
-        <p class="line" id="l12" data-at="11.2">Before it, I was lost, not knowing what I liked, who I wanted to be, what I wanted to look forward to in life.</p>
+        <p class="line" id="l12" data-at="12.2">Before it, I was lost, not knowing what I liked, who I wanted to be, what I wanted to look forward to in life.</p>
 
-        <p class="line" id="l13" data-at="12.5" data-anim="type" data-ease="linear" data-len="1" data-hold="stay">With it, I found out.</p>
+        <p class="line" id="l13" data-sync="fadeOut" data-anim="type" data-ease="linear" data-hold="stay">With it, I found out.</p>
     </div>
 
     <div class="track" id="track"></div>
     <div class="hud" id="hud"></div>
 
     <!-- ============================================================
-         4. ENGINE: turns the scroll position into --p (per line), --pan and the fade. No scroll hijacking:
-         the page scrolls normally (page.js gives it Lenis), and everything here is a function of how far it has scrolled.
+         4. ENGINE: turns the scroll position into --p / --pin / --pout (per line), --pan and the fade. No scroll
+         hijacking: the page scrolls normally (page.js gives it Lenis), and everything here is a function of how far
+         it has scrolled.
     ============================================================ -->
     <script>
         (() => {
@@ -301,7 +431,7 @@
             const track = document.getElementById('track');
             const hud = document.getElementById('hud');
 
-            /* ---- the picture: first of name.png / .jpg / ... that loads ---- */
+            /* ---- the picture: first of name.jpg / .jpeg / ... that loads ---- */
             const urls = CONFIG.image.exts.map((ext) => `${CONFIG.image.name}.${ext}`);
             let tries = 0;
             photo.onload = () => {
@@ -312,7 +442,7 @@
             };
             photo.onerror = () => {
                 if (++tries < urls.length) photo.src = urls[tries];
-                else console.warn('context: no picture found. Add the/' + urls[0] + ' (or .jpg / .jpeg / .webp).');
+                else console.warn('context: no picture found. Add the/' + urls[0] + ' (or .jpeg / .png / .webp).');
             };
             photo.src = urls[0];
 
@@ -324,7 +454,9 @@
             };
             let prevAt = -L.gap;
             const lines = Array.from(stage.querySelectorAll('.line')).map((el) => {
-                const at = num(el, 'at', prevAt + L.gap);
+                const sync = el.dataset.sync === 'fadeOut';
+                const at = sync ? CONFIG.fadeOut.from : num(el, 'at', prevAt + L.gap);
+                const len = sync ? CONFIG.fadeOut.to - CONFIG.fadeOut.from : num(el, 'len', L.len);
                 prevAt = at;
                 const anim = el.dataset.anim || L.anim;
                 el.dataset.anim = anim;
@@ -332,11 +464,11 @@
                 const item = {
                     el,
                     at: at * K,
-                    len: num(el, 'len', L.len) * K,
+                    len: len * K,
                     out: num(el, 'out', L.out) * K,
                     hold: holdRaw === 'stay' ? Infinity : (parseFloat(holdRaw) || 0) * K,
                     ease: el.dataset.ease || L.ease,
-                    p: -1,
+                    p: -1, pin: -1, pout: -1,
                 };
                 if (anim === 'words' || anim === 'type') split(el, anim);
                 return item;
@@ -383,12 +515,21 @@
                 }
 
                 for (const l of lines) {
-                    let p = ease(l.ease, range(s, l.at, l.at + l.len));
+                    const pin = ease(l.ease, range(s, l.at, l.at + l.len));
+                    let pout = 0;
                     if (l.hold !== Infinity) {
                         const outAt = l.at + l.len + l.hold;
-                        p = Math.min(p, 1 - ease(l.ease, range(s, outAt, outAt + l.out)));
+                        pout = ease(l.ease, range(s, outAt, outAt + l.out));
                     }
-                    if (p !== l.p) { l.p = p; l.el.style.setProperty('--p', p); }
+                    const p = Math.min(pin, 1 - pout);
+                    if (pin !== l.pin) { l.pin = pin; l.el.style.setProperty('--pin', pin); }
+                    if (pout !== l.pout) { l.pout = pout; l.el.style.setProperty('--pout', pout); }
+                    if (p !== l.p) {
+                        l.p = p;
+                        l.el.style.setProperty('--p', p);
+                        l.el.classList.toggle('off', p <= 0.001);      // not showing: hidden, so no invisible links
+                        l.el.classList.toggle('live', p > 0.3);        // showing enough to click its links
+                    }
                 }
 
                 if (hud.classList.contains('on')) {
