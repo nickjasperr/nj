@@ -80,6 +80,7 @@
         editionCover: (album, cover, ext) => `${album}/${cover}.${ext}`,
         albumCover: (album, ext) => `covers/${album}.${ext}`,         // used when an edition has no (working) custom cover
         platformIcon: (platform, ext) => `icon/${platform}.${ext}`,
+        page: (album, tab) => `${album}/${tab}.html`,                 // every tab except cover + listen: fetched and shown in an iframe
         coverExts: ['png', 'jpg', 'jpeg'],                            // tried in this order
         iconExts: ['png', 'svg', 'jpg', 'jpeg'],
     };
@@ -239,6 +240,7 @@
     if (window.Lenis && !reduceMotion) {
         lenis = new Lenis(LENIS);
     }
+    window.SITE = { LENIS, reduceMotion };      // read by page.js inside the album pages (context, samples...)
 
     /* ================================================================
        CURSOR STATE
@@ -268,7 +270,14 @@
     }
 
     function updateHover() {
-        const el = document.elementFromPoint(mouseX, mouseY);
+        let el = document.elementFromPoint(mouseX, mouseY);
+        // over a page iframe (context, samples...): look at what is under the cursor inside it
+        if (el && el.tagName === 'IFRAME') {
+            try {
+                const r = el.getBoundingClientRect();
+                el = el.contentDocument.elementFromPoint(mouseX - r.left, mouseY - r.top);
+            } catch (err) { el = null; }
+        }
         hovered = el ? el.closest('a, button, [data-clickable]') : null;
     }
 
@@ -834,6 +843,42 @@
         pageContent.appendChild(el);
     }
 
+    // Any other tab (context, samples...): <album>/<tab>.html is fetched and shown in an iframe.
+    // The page goes in as srcdoc, with a <base> pointing at the album folder so its relative links work.
+    // That is also how page.js knows the page was opened by the site: a page opened by its own address
+    // is not "about:srcdoc", so page.js sends that visitor to the 404 page (see page.js).
+    // Fetch fails (no such file): PAGE NOT FOUND, like before.
+    let frameToken = 0;                                   // bumped on every tab change, so a slow fetch can't land on the wrong tab
+    async function showFrame(key, tab) {
+        const token = ++frameToken;
+        try {
+            const url = new URL(PATHS.page(key, tab), document.baseURI);
+            const res = await fetch(url, { cache: 'no-cache' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+            if (token !== frameToken) return;
+            const base = doc.createElement('base');
+            base.href = new URL('./', url).href;
+            doc.head.prepend(base);
+            const frame = document.createElement('iframe');
+            frame.className = 'page-frame';
+            frame.title = tab;
+            frame.srcdoc = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+            pageContent.appendChild(frame);
+        } catch (err) {
+            if (token !== frameToken) return;
+            pageContent.textContent = '';
+            showNotFound();
+        }
+        hoverDirty = true;
+    }
+
+    function stopFrame() {
+        frameToken++;
+        const frame = pageContent.querySelector('.page-frame');
+        if (frame) frame.remove();
+    }
+
     // Remembers the movement of the last COVER.flickWindow seconds of a drag. On release, velocity() gives the average
     // speed over that window (px/s), so a drag that stopped before letting go gives 0 and a fast flick gives a fast glide.
     function makeFlick() {
@@ -1335,16 +1380,17 @@
         overlay.classList.remove('no-scrollbar');
     }
 
-    // replace the page content with the page for a tab (cover: zoomable cover, listen: platforms, any other tab: PAGE NOT FOUND for now)
+    // replace the page content with the page for a tab (cover: zoomable cover, listen: platforms, any other tab: <album>/<tab>.html in an iframe)
     function loadTab(tab) {
         stopListenScroll();
         stopCover();
+        stopFrame();
         pageContent.textContent = '';
         pruneFade();
         overlay.scrollTop = 0;
         if (tab === 'listen') startListenScroll(showListen(currentKey));
         else if (tab === 'cover' && currentAlbum) showCover(currentAlbum);
-        else showNotFound();
+        else showFrame(currentKey, tab);
         hoverDirty = true;
     }
 
@@ -1472,6 +1518,7 @@
         hideMenuLayers();
         stopListenScroll();
         stopCover();
+        stopFrame();
         overlay.classList.remove('no-fade');
         overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden', 'true');

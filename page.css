@@ -1,0 +1,114 @@
+/* ==================================================================
+   page.css: shared base for every album sub-page (the/context.html, ...)
+   Link it from each page:  <link rel="stylesheet" href="../page.css">
+   The same look as the homepage (Space Mono, white on black, no cursor, nothing selectable).
+   Page-specific styling goes in the page's own <style>.
+================================================================== */
+@font-face {
+    font-family: "Space Mono";
+    src: url("fonts/SpaceMono-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+}
+
+:root {
+    --bg: #000;
+    --fg: #fff;
+    --pad: clamp(1rem, 3vw, 2.5rem);
+    --close-size: 2.667rem;                 /* the site's menu / X button */
+
+    /* room the site's menu button needs: top right on mouse screens, bottom right on touch screens */
+    --page-top: calc(var(--pad) * 2 + var(--close-size));
+    --page-bottom: calc(var(--pad) * 3);
+}
+
+@media (hover: none), (pointer: coarse) {
+    :root {
+        --page-top: calc(var(--pad) * 2);
+        --page-bottom: calc(var(--pad) * 2 + var(--close-size) + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--bg);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior-x: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Space Mono", monospace;
+    font-weight: 400;
+    font-synthesis: none;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
+}
+
+h1,
+h2,
+h3,
+p,
+ol,
+ul,
+dl,
+dd {
+    margin: 0;
+    font-weight: 400;
+}
+
+:focus,
+:focus-visible {
+    outline: none;
+}
+
+a,
+img,
+button {
+    -webkit-user-drag: none;
+}
+
+/* the site draws its own cursor (page.js passes the pointer up to it) */
+@media (hover: hover) and (pointer: fine) {
+
+    html,
+    html * {
+        cursor: none !important;
+    }
+}
+
+/* Lenis required styles (same as style.css) */
+html.lenis,
+html.lenis body {
+    height: auto;
+}
+
+.lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+}
+
+.lenis.lenis-stopped {
+    overflow: clip;
+}
