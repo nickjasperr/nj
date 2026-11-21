@@ -118,6 +118,7 @@
         hoverRadius: 16,    // over something clickable
         pressRadius: 12,     // while mouse button is held (smaller than normal)
         thickness: 2,       // ring outline thickness in px
+        debugScale: 4,      // holding ALT + SHIFT: the cursor fills in and grows to this many times hoverRadius (to see what the filter does)
         lerp: {
             multiplierPlus: 18,   // speed when growing  (per second)
             multiplierMinus: 18,  // speed when shrinking (per second)
@@ -129,10 +130,32 @@
     // COVER page (zoom + drag viewer). Zoom 1 = 100% = one image pixel per DEVICE pixel.
     // The slider runs from "fit to screen" (far left) to maxZoom (far right).
     const COVER = {
-        maxZoom: 2,           // 200%
+        maxZoom: 3,
         wheelStep: 1 / 12,    // slider travel per ctrl + wheel notch and per ctrl + / ctrl -
         zoomSpeed: 15,        // how fast zoom eases towards its target (per second, higher = snappier)
         panSpeed: 15,         // same for scrolling around the image
+        // glide after letting go of a drag (image and zoom box)
+        flickWindow: 0.1,     // seconds of drag history averaged to get the release velocity
+        glideFriction: 2.5,   // "air resistance": speed multiplies by e^(-friction * seconds). Higher = stops sooner. 2.0 is about a phone's scroll
+        boxFriction: 5.0,     // same, for the zoom box
+        glideMin: 8,          // px/s: below this the glide is over (also: slower than this at release = no glide)
+        glideMax: 250000,       // px/s: cap on the release velocity (also the top speed the arrow keys can build up)
+        arrowSpeed: 2500,     // holding an arrow key adds arrowSpeed * seconds to the image's glide velocity every frame (px/s per second),
+                              // so the longer you hold it the faster it goes. Friction slows it, so top speed is about arrowSpeed / glideFriction
+        // zoom box: pull towards a nearby wall while it glides
+        wallZone: 0.075,        // base distance of the "near a wall" zone, as a fraction of the screen: left / right / centre use the
+                              // screen WIDTH, top / bottom use the screen HEIGHT. Measured from the box's edge closest to that wall
+        wallZoneLR: 1,        // multiplier on wallZone for the left and right walls
+        wallZoneTB: 1,        // multiplier on wallZone for the top and bottom walls
+        wallPull: 4,          // pull at the wall itself, px per frame (at 60fps). It falls off linearly: wallPull at 0 distance, 0 at wallZone
+        wallMaxSpeed: 1000,    // px/s: the pull only works while the box's glide speed (x and y combined) is below this
+        wallTaper: 0.1,       // fraction of wallMaxSpeed where the pull starts fading: at or below it the pull is full (x1),
+                              // at wallMaxSpeed it is 0 (x0), linear in between (0.5: 75% of the max speed = x0.5)
+        // zoom box: pull towards the horizontal centre line of the screen while it glides
+        centerZone: 0.5,      // multiplier on wallZone (of the screen width) for the centre line zone
+        centerPull: 2,        // pull at the centre line itself, px per frame (at 60fps), falls off linearly to 0 at the zone's edge
+        centerMaxSpeed: 400,  // px/s: the centre pull only works while the glide speed is below this
+        centerTaper: 0.1,     // same idea as wallTaper, for the centre pull
     };
 
     // Album box background fade. 0 = transparent at rest, 0.05 = 5% white on hover.
@@ -231,6 +254,7 @@
     let visible = false;
     let hovered = null;       // the clickable element under the cursor
     let hoverDirty = false;   // re-check what's under the cursor on the next frame
+    let debugFill = false;    // ALT + SHIFT held: filled, big cursor (debug)
 
     function renderCursor() {
         const r = Math.max(radius, CURSOR.thickness);
@@ -251,9 +275,20 @@
     if (finePointer) {
         renderCursor();
 
+        // ALT + SHIFT together = debug cursor. Read from the modifier state every key / move event, and cleared on blur
+        const setDebugFill = (on) => {
+            if (on === debugFill) return;
+            debugFill = on;
+            cursorEl.classList.toggle('fill', on);
+        };
+        window.addEventListener('keydown', (e) => setDebugFill(e.altKey && e.shiftKey), { passive: true });
+        window.addEventListener('keyup', (e) => setDebugFill(e.altKey && e.shiftKey), { passive: true });
+        window.addEventListener('blur', () => setDebugFill(false));
+
         // Position is written straight inside the event handler: no smoothing, no rAF wait.
         window.addEventListener('pointermove', (e) => {
             if (e.pointerType === 'touch') return;
+            setDebugFill(e.altKey && e.shiftKey);
             mouseX = e.clientX;
             mouseY = e.clientY;
             if (!visible) setVisible(true);
@@ -319,7 +354,14 @@
     }
 
     function applyLayout() {
+        // --cat-size in style.css: "auto" = fitted by this script, any real size (e.g. 3rem, 40px) = used as-is
+        const rawCat = getComputedStyle(document.documentElement).getPropertyValue('--cat-size').trim();
+        const manualCat = rawCat !== '' && rawCat !== 'auto';
         const fitted = catItems.map((c) => {
+            if (manualCat) {
+                c.title.style.fontSize = '';                                   // let the CSS variable apply
+                return { c, size: parseFloat(getComputedStyle(c.title).fontSize) || 0 };
+            }
             const h = Math.max(0, ...c.albums.map(albumHeight));
             return { c, size: c.chars && h ? h / (c.chars * CHAR_W) : 0 };   // monospace: length = chars * 0.612em
         });
@@ -327,6 +369,7 @@
         const side = categories.clientWidth >= probe.offsetWidth + titleW;
         discography.dataset.layout = side ? 'side' : 'stack';
         for (const f of fitted) {
+            if (manualCat) continue;                                              // manual size: CSS already applied it
             let px = 0;
             if (side) px = f.size;                                                        // length == list height
             else if (f.c.chars) {                                                         // stacked: exactly 1 album box wide
@@ -520,7 +563,8 @@
 
         // cursor radius
         if (finePointer) {
-            const desired = pressed ? CURSOR.pressRadius
+            const desired = debugFill ? CURSOR.hoverRadius * CURSOR.debugScale
+                : pressed ? CURSOR.pressRadius
                 : hovered ? CURSOR.hoverRadius
                     : CURSOR.radius;
             const r = stepWith(CURSOR.lerp, desired, radius, dt);
@@ -790,6 +834,38 @@
         pageContent.appendChild(el);
     }
 
+    // Remembers the movement of the last COVER.flickWindow seconds of a drag. On release, velocity() gives the average
+    // speed over that window (px/s), so a drag that stopped before letting go gives 0 and a fast flick gives a fast glide.
+    function makeFlick() {
+        const samples = [];                 // { t (ms), dx, dy } one per pointer move
+        let since = performance.now();      // when the drag (or this tracking) started
+        const prune = (now) => {
+            const from = now - COVER.flickWindow * 1000;
+            while (samples.length && samples[0].t < from) samples.shift();
+        };
+        return {
+            reset() { samples.length = 0; since = performance.now(); },
+            add(dx, dy) {
+                const now = performance.now();
+                samples.push({ t: now, dx, dy });
+                prune(now);
+            },
+            velocity() {
+                const now = performance.now();
+                prune(now);
+                let sx = 0, sy = 0;
+                for (const m of samples) { sx += m.dx; sy += m.dy; }
+                const from = Math.max(since, now - COVER.flickWindow * 1000);
+                const span = Math.max(now - from, 16) / 1000;     // short drags: divide by how long it really was
+                let vx = sx / span, vy = sy / span;
+                const sp = Math.hypot(vx, vy);
+                if (sp < COVER.glideMin) return { x: 0, y: 0 };
+                if (sp > COVER.glideMax) { vx *= COVER.glideMax / sp; vy *= COVER.glideMax / sp; }
+                return { x: vx, y: vy };
+            },
+        };
+    }
+
     // COVER page: the album cover on its own. Drag to move, wheel / pinch / slider to zoom.
     // zoom 1 = 100% = one image pixel per device pixel. Minimum = fit to screen, maximum = COVER.maxZoom.
     function showCover(album) {
@@ -836,6 +912,10 @@
         let panX = 0, panY = 0;             // scroll distance still to travel (eased out by tick)
         let bx = 0, by = 0;                 // zoom box: top-left corner on the stage (css px)
         let boxFree = false;                // true once the box has been dragged: it then stays where it was put
+        const imgFlick = makeFlick(), boxFlick = makeFlick();
+        let vx = 0, vy = 0;                 // image glide velocity after a drag (px/s)
+        let bvx = 0, bvy = 0;               // zoom box glide velocity after a drag (px/s)
+        let boxGlide = false;               // zoom box glide loop is running (set when a drag is let go)
 
         const clampZ = (v) => clamp(v, fitZ, maxZ);
         const sOf = (v) => (maxZ > fitZ ? clamp(Math.log(v / fitZ) / Math.log(maxZ / fitZ), 0, 1) : 0);
@@ -868,12 +948,12 @@
 
         // Place the zoom box. Everything here is plain numbers (the stage size and the box's own layout size,
         // which a translate doesn't change), so it can't drift: the box is always fully inside the stage.
-        // Not dragged yet = centred on the bottom edge.
+        // Not dragged yet = in the bottom left corner.
         function layoutBox() {
             const w = stage.clientWidth, h = stage.clientHeight;
             if (!w || !h) return;
             const bw = ui.offsetWidth, bh = ui.offsetHeight;
-            if (!boxFree) { bx = (w - bw) / 2; by = h - bh; }
+            if (!boxFree) { bx = 0; by = h - bh; }
             bx = clamp(bx, 0, Math.max(0, w - bw));
             by = clamp(by, 0, Math.max(0, h - bh));
             ui.style.translate = `${bx}px ${by}px`;
@@ -942,6 +1022,8 @@
             try { stage.setPointerCapture(e.pointerId); } catch (_) { }
             tz = z;                                        // grabbing stops a zoom that is still easing...
             panX = panY = 0;                               // ...and a scroll
+            vx = vy = 0;                                   // ...and a glide
+            imgFlick.reset();
             tap = ptrs.size === 1 ? { t: performance.now(), x: e.clientX, y: e.clientY, ok: true } : null;
             if (ptrs.size === 2) last = pinch();
         });
@@ -951,6 +1033,7 @@
             if (!p) return;
             if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap.ok = false;   // it moved: a drag, not a tap
             const px = p.x, py = p.y;
+            const ox = x, oy = y;
             p.x = e.clientX; p.y = e.clientY;
             if (ptrs.size === 1) {
                 x += p.x - px;
@@ -964,16 +1047,22 @@
                 last = m;
             }
             clampPan();
+            if (ptrs.size === 1) imgFlick.add(x - ox, y - oy);      // what the image really moved (edges included)
             render();
         });
 
         const lift = (e) => {
             if (!ptrs.delete(e.pointerId)) return;
+            imgFlick.reset();                              // finger count changed: start the history over
             if (ptrs.size === 2) last = pinch();
         };
         stage.addEventListener('pointerup', (e) => {
             const now = performance.now();
             const wasTap = tap && tap.ok && ptrs.size === 1 && ptrs.has(e.pointerId) && now - tap.t < 400;
+            if (ptrs.size === 1 && ptrs.has(e.pointerId) && !reduceMotion) {      // last finger / the mouse let go: glide
+                const v = imgFlick.velocity();
+                vx = v.x; vy = v.y;
+            }
             lift(e);
             if (!wasTap) return;
             // two quick taps in (about) the same spot = a click on the percentage
@@ -1000,6 +1089,7 @@
                 else notch(dy, e.clientX, e.clientY);
                 return;
             }
+            vx = vy = 0;                                         // scrolling stops a drag glide (zooming, above, doesn't)
             // not applied here: it is added to the distance still to travel, and tick() eases it out
             if (e.shiftKey) {
                 panX -= Math.abs(dx) > Math.abs(dy) ? dx : dy;   // browsers differ in which axis shift + wheel reports
@@ -1020,6 +1110,22 @@
             else zoomTo(zOf(clamp(sOf(tz) + dir * COVER.wheelStep, 0, 1)), W / 2, H / 2);
         };
         document.addEventListener('keydown', onKey);
+
+        /* ---- arrow keys: while held they keep adding velocity to the image's glide (see tick) ----
+           left adds to the x velocity (the image slides right, so you look further left), right subtracts, up / down the same for y.
+           Not while the slider has focus (the arrow keys belong to it then), and not with ctrl / cmd / alt held. */
+        const arrows = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false };
+        const onArrowDown = (e) => {
+            if (!(e.key in arrows) || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.target === slider || pageState !== 'page') return;
+            arrows[e.key] = true;
+            e.preventDefault();
+        };
+        const onArrowUp = (e) => { if (e.key in arrows) arrows[e.key] = false; };
+        const clearArrows = () => { for (const k in arrows) arrows[k] = false; };
+        document.addEventListener('keydown', onArrowDown);
+        document.addEventListener('keyup', onArrowUp);
+        window.addEventListener('blur', clearArrows);
 
         // Safari's own pinch-zoom gesture: not wanted here
         for (const t of ['gesturestart', 'gesturechange', 'gestureend']) {
@@ -1043,6 +1149,9 @@
         ui.addEventListener('pointerdown', (e) => {
             if (e.pointerType === 'mouse' && e.button !== 0) return;
             if (e.clientY >= slider.getBoundingClientRect().top) return;
+            bvx = bvy = 0;                                              // grabbing stops a glide
+            boxGlide = false;
+            boxFlick.reset();
             boxMoved = false;
             boxDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, bx, by, moved: false };
         });
@@ -1052,14 +1161,72 @@
             if (!boxDrag.moved && Math.hypot(dx, dy) < 4) return;       // a click on the percentage stays a click
             boxDrag.moved = boxMoved = true;
             boxFree = true;
+            const obx = bx, oby = by;
             bx = boxDrag.bx + dx;
             by = boxDrag.by + dy;
             layoutBox();                                                // clamps: it can't leave the stage
+            boxFlick.add(bx - obx, by - oby);                           // what the box really moved (walls included)
         };
-        const boxUp = (e) => { if (boxDrag && e.pointerId === boxDrag.id) boxDrag = null; };
+        const boxUp = (e) => {
+            if (!boxDrag || e.pointerId !== boxDrag.id) return;
+            if (boxDrag.moved && !reduceMotion) { const v = boxFlick.velocity(); bvx = v.x; bvy = v.y; boxGlide = true; }   // always starts the loop, so the pulls work even with no glide
+            boxDrag = null;
+        };
+        const boxCancel = (e) => { if (boxDrag && e.pointerId === boxDrag.id) boxDrag = null; };
         window.addEventListener('pointermove', boxMove);
         window.addEventListener('pointerup', boxUp);
-        window.addEventListener('pointercancel', boxUp);
+        window.addEventListener('pointercancel', boxCancel);
+
+        // Wall pull for the zoom box (only called while it glides). For each axis, find the wall whose box edge is closest.
+        // If that edge is inside the zone but not touching the wall, it matches: the box is moved towards the wall by
+        // COVER.wallPull * (1 - distance / zone) px per frame (60fps), but only while the glide speed is under COVER.wallMaxSpeed.
+        // Returns true if the box is in a wall zone (even when the speed is too high for the pull to work yet).
+        // 1 up to taper * maxSpeed, then linearly down to 0 at maxSpeed
+        const taperFade = (speed, maxSpeed, taper) => {
+            const r = speed / maxSpeed;
+            return r <= taper ? 1 : (taper < 1 ? Math.max(0, (1 - r) / (1 - taper)) : 0);
+        };
+
+        function boxWallPull(dt, speed) {
+            const w = stage.clientWidth, h = stage.clientHeight;
+            const zoneX = COVER.wallZone * COVER.wallZoneLR * w;        // left / right: of the screen width
+            const zoneY = COVER.wallZone * COVER.wallZoneTB * h;        // top / bottom: of the screen height
+            const gx = Math.min(bx, w - ui.offsetWidth - bx);           // box edge -> nearest of left / right wall
+            const gy = Math.min(by, h - ui.offsetHeight - by);          // box edge -> nearest of top / bottom wall
+            const inX = gx > 0.01 && gx < zoneX;
+            const inY = gy > 0.01 && gy < zoneY;
+            if (!inX && !inY) return false;
+            if (speed < COVER.wallMaxSpeed) {
+                // fade the pull out as the glide gets faster (glide speed only, the pull's own movement isn't counted)
+                const k = dt * 60 * taperFade(speed, COVER.wallMaxSpeed, COVER.wallTaper);
+                if (inX) bx += (bx <= w - ui.offsetWidth - bx ? -1 : 1) * COVER.wallPull * (1 - gx / zoneX) * k;
+                if (inY) by += (by <= h - ui.offsetHeight - by ? -1 : 1) * COVER.wallPull * (1 - gy / zoneY) * k;
+                layoutBox();                                            // clamps: it lands exactly on the wall, never past it
+            }
+            return true;
+        }
+
+        // Centre pull for the zoom box (only called while it glides). Distance = box centre to the screen's centre line,
+        // zone = centerZone * the smaller of the left / right and top / bottom wall zones, own pull strength, speed limit + taper. It never passes the line: if a step would
+        // cross it, the box is put exactly ON the line before it is drawn. Returns true if the box is in the zone.
+        function boxCenterPull(dt, speed) {
+            const w = stage.clientWidth, h = stage.clientHeight;
+            const zone = COVER.centerZone * Math.min(COVER.wallZone * COVER.wallZoneLR * w,    // the smaller of the left / right zone
+                                                     COVER.wallZone * COVER.wallZoneTB * h);   // and the top / bottom zone
+            if (!(zone > 0)) return false;
+            const bw = ui.offsetWidth;
+            const mid = (w - bw) / 2;                                   // bx that puts the box's centre on the line
+            const off = bx - mid;                                       // < 0: box is left of the line, > 0: right of it
+            const d = Math.abs(off);
+            if (d <= 0.01 || d >= zone) return false;
+            if (speed < COVER.centerMaxSpeed) {
+                const step = COVER.centerPull * (1 - d / zone) * dt * 60 * taperFade(speed, COVER.centerMaxSpeed, COVER.centerTaper);
+                const nx = bx - Math.sign(off) * step;                  // towards the line
+                bx = (nx - mid) * off <= 0 ? mid : nx;                  // passed (or reached) it: put it on the line
+                layoutBox();
+            }
+            return true;
+        }
 
         coverView = {
             tick(dt) {
@@ -1083,14 +1250,66 @@
                     if (Math.abs(y - py - sy) > 0.01) panY = 0;
                     if (x !== px || y !== py) moved = true;
                 }
+                // arrow keys: add velocity every frame for as long as they are held (opposite keys cancel out)
+                if (ptrs.size === 0 && pageState === 'page') {
+                    const kx = (arrows.ArrowLeft ? 1 : 0) - (arrows.ArrowRight ? 1 : 0);
+                    const ky = (arrows.ArrowUp ? 1 : 0) - (arrows.ArrowDown ? 1 : 0);
+                    if (kx || ky) {
+                        if (reduceMotion) {
+                            // no gliding allowed: move at a steady speed instead (the same top speed the glide would reach)
+                            x += kx * COVER.arrowSpeed / COVER.glideFriction * dt;
+                            y += ky * COVER.arrowSpeed / COVER.glideFriction * dt;
+                            clampPan();
+                            moved = true;
+                        } else {
+                            vx += kx * COVER.arrowSpeed * dt;
+                            vy += ky * COVER.arrowSpeed * dt;
+                            const sp = Math.hypot(vx, vy);
+                            if (sp > COVER.glideMax) { vx *= COVER.glideMax / sp; vy *= COVER.glideMax / sp; }
+                        }
+                    }
+                }
+                // glide after a drag: speed fades exponentially (air resistance), and stops against an edge
+                if ((vx || vy) && ptrs.size === 0) {
+                    const px = x, py = y;
+                    const tx = x + vx * dt, ty = y + vy * dt;
+                    x = tx; y = ty;
+                    clampPan();
+                    if (x !== tx) vx = 0;                           // hit an edge: that direction is done
+                    if (y !== ty) vy = 0;
+                    const f = Math.exp(-COVER.glideFriction * dt);
+                    vx *= f; vy *= f;
+                    if (Math.hypot(vx, vy) < COVER.glideMin) vx = vy = 0;
+                    if (x !== px || y !== py) moved = true;
+                }
+                if (boxGlide && !boxDrag) {
+                    if (bvx || bvy) {
+                        const tx = bx + bvx * dt, ty = by + bvy * dt;
+                        bx = tx; by = ty;
+                        layoutBox();
+                        if (bx !== tx) bvx = 0;
+                        if (by !== ty) bvy = 0;
+                        const f = Math.exp(-COVER.boxFriction * dt);
+                        bvx *= f; bvy *= f;
+                        if (Math.hypot(bvx, bvy) < COVER.glideMin) bvx = bvy = 0;
+                    }
+                    // the loop keeps going until the glide has worn out AND the box is no longer in a wall zone
+                    const speed = Math.hypot(bvx, bvy);                 // glide speed only, the pulls' own movement isn't counted
+                    const inWall = boxWallPull(dt, speed);
+                    const inCenter = boxCenterPull(dt, speed);
+                    if (!bvx && !bvy && !inWall && !inCenter) boxGlide = false;
+                }
                 if (moved) render();
             },
             destroy() {
                 ro.disconnect();
                 document.removeEventListener('keydown', onKey);
+                document.removeEventListener('keydown', onArrowDown);
+                document.removeEventListener('keyup', onArrowUp);
+                window.removeEventListener('blur', clearArrows);
                 window.removeEventListener('pointermove', boxMove);
                 window.removeEventListener('pointerup', boxUp);
-                window.removeEventListener('pointercancel', boxUp);
+                window.removeEventListener('pointercancel', boxCancel);
             },
         };
         return stage;

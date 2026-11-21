@@ -25,22 +25,96 @@
 </head>
 
 <body>
-    <!-- Cursor filter (used by .cursor in style.css):
-         greyscale -> threshold at 50% -> grow the bright pixels by 1px in every direction -> invert.
-         So a lone white pixel on black becomes a 3x3 black square on white inside the ring. -->
+    <!-- Cursor filter (used by .cursor in style.css), step by step. Every pixel is black (0) or white (1) from step 2 on:
+         1. greyscale
+         2. threshold at 50%: "bright" pixels = 1
+         3. a bright pixel only counts if at least one of its 8 neighbours (touching or diagonal) is bright too,
+            so lone bright pixels are dropped (convolve = "is any neighbour bright", multiplied with the pixel itself)
+         4. a pixel with at least one black pixel within 3 pixels up, AND down, AND left, AND right (straight lines only)
+            becomes black. Runs before the blur.
+         5. (the blur) every pixel that is not black gets DARKER the more black is around it: its darkness is
+            (average of the 24 pixels around it in the 5x5 grid) + (average of the 8 pixels around it in the 3x3 grid),
+            added together (capped at black). So 24 + 8 black neighbours = black, none = white.
+            Black pixels stay black. (the two averages are 3x3 / 5x5 convolves with the centre left out, then
+            black pixel + darkness - black pixel * darkness, which is "black stays black, otherwise take the darkness")
+         6. invert: black on white. Each step reads the image as it was before the step, so no chain reaction. -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <filter id="cursor-filter" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+            <!-- 1. greyscale -->
             <feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0
                         0.2126 0.7152 0.0722 0 0
                         0.2126 0.7152 0.0722 0 0
                         0      0      0      1 0" />
-            <feComponentTransfer>
+            <!-- 2. threshold at 50% -->
+            <feComponentTransfer result="bright">
                 <feFuncR type="discrete" tableValues="0 1" />
                 <feFuncG type="discrete" tableValues="0 1" />
                 <feFuncB type="discrete" tableValues="0 1" />
             </feComponentTransfer>
-            <feMorphology operator="dilate" radius="1" />
-            <feComponentTransfer>
+            <!-- 3. only keep bright pixels that have a bright neighbour (8 directions) -->
+            <feConvolveMatrix in="bright" order="3" kernelMatrix="1 1 1  1 0 1  1 1 1" divisor="1" bias="0"
+                targetX="1" targetY="1" edgeMode="none" preserveAlpha="true" result="hasNeighbour" />
+            <feComposite in="bright" in2="hasNeighbour" operator="arithmetic" k1="1" k2="0" k3="0" k4="0"
+                result="solid" />
+            <!-- 4. black pixels in all 4 directions: a pixel that has at least one black pixel within 3 pixels straight up,
+                 AND straight down, AND straight left, AND straight right becomes black. Each convolve answers "is any of
+                 those 3 pixels black?" (1 or 0), the composites multiply the four answers, then black pixel + answer -
+                 black pixel * answer keeps black pixels black. This runs BEFORE the blur below. -->
+            <feConvolveMatrix in="solid" order="7" divisor="1" bias="0" targetX="3" targetY="3" edgeMode="none"
+                preserveAlpha="true" result="up"
+                kernelMatrix="0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 1 0 0 0
+                              0 0 0 1 0 0 0
+                              0 0 0 1 0 0 0" />
+            <feConvolveMatrix in="solid" order="7" divisor="1" bias="0" targetX="3" targetY="3" edgeMode="none"
+                preserveAlpha="true" result="down"
+                kernelMatrix="0 0 0 1 0 0 0
+                              0 0 0 1 0 0 0
+                              0 0 0 1 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0" />
+            <feConvolveMatrix in="solid" order="7" divisor="1" bias="0" targetX="3" targetY="3" edgeMode="none"
+                preserveAlpha="true" result="left"
+                kernelMatrix="0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 1 1 1
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0" />
+            <feConvolveMatrix in="solid" order="7" divisor="1" bias="0" targetX="3" targetY="3" edgeMode="none"
+                preserveAlpha="true" result="right"
+                kernelMatrix="0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              1 1 1 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0
+                              0 0 0 0 0 0 0" />
+            <feComposite in="up" in2="down" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="upDown" />
+            <feComposite in="left" in2="right" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="leftRight" />
+            <feComposite in="upDown" in2="leftRight" operator="arithmetic" k1="1" k2="0" k3="0" k4="0" result="enclosed" />
+            <feComposite in="solid" in2="enclosed" operator="arithmetic" k1="-1" k2="1" k3="1" k4="0" result="closed" />
+            <!-- 5. darkness of every pixel that isn't black already = 5x5 average + 3x3 average (centre pixel left out of both) -->
+            <feConvolveMatrix in="closed" order="5" divisor="24" bias="0" targetX="2" targetY="2" edgeMode="none"
+                preserveAlpha="true" result="avg5"
+                kernelMatrix="1 1 1 1 1
+                              1 1 1 1 1
+                              1 1 0 1 1
+                              1 1 1 1 1
+                              1 1 1 1 1" />
+            <feConvolveMatrix in="closed" order="3" divisor="8" bias="0" targetX="1" targetY="1" edgeMode="none"
+                preserveAlpha="true" result="avg3"
+                kernelMatrix="1 1 1  1 0 1  1 1 1" />
+            <feComposite in="avg5" in2="avg3" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="darkness" />
+            <feComposite in="closed" in2="darkness" operator="arithmetic" k1="-1" k2="1" k3="1" k4="0" result="filled" />
+            <!-- 6. invert -->
+            <feComponentTransfer in="filled">
                 <feFuncR type="table" tableValues="1 0" />
                 <feFuncG type="table" tableValues="1 0" />
                 <feFuncB type="table" tableValues="1 0" />

@@ -71,8 +71,9 @@
     /* space between album boxes (horizontal and vertical) */
     --edge: 10px;
     /* fade-out width at the left/right of a list, also the padding so the first/last album sit clear of it */
-    --cat-size: 1.25rem;
-    /* category title font size in the stacked layout (side layout is auto-fitted by JS) */
+    --cat-size: auto;
+    /* category title font size. auto = fitted by JS (side: as long as the list is tall, stacked: as wide as an album).
+       Put a real size here (e.g. 3rem or 40px) to override it in BOTH layouts. */
     --cat-gap: 5px;
     /* space between category title and its list (side layout), 0 = glued */
     --cat-spacing: 150px;
@@ -244,6 +245,16 @@ button {
     visibility: visible;
 }
 
+/* debug (ALT + SHIFT, set by script.js): the ring mask is replaced by a full disc, so the whole filtered circle shows */
+.cursor.fill {
+    -webkit-mask: radial-gradient(circle farthest-side,
+            #000 calc(100% - 2 * var(--cursor-blur)),
+            transparent 100%);
+    mask: radial-gradient(circle farthest-side,
+            #000 calc(100% - 2 * var(--cursor-blur)),
+            transparent 100%);
+}
+
 @media (hover: hover) and (pointer: fine) {
 
     html,
@@ -359,7 +370,7 @@ button {
 }
 
 .cat-title {
-    font-size: var(--cat-size);
+    font-size: var(--cat-size, inherit);
     line-height: 1;
     white-space: nowrap;
     user-select: none;
