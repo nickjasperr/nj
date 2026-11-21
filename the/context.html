@@ -5,15 +5,14 @@
   Not meant to be opened on its own: the site fetches this file and shows it in an iframe (see showFrame()
   in script.js). Opened directly, page.js replaces it with the 404 page.
 
-  WHERE THINGS ARE (top to bottom):
-    1. CONFIG      timing, image, grain, fade out. Everything is measured in SCREENS of scroll
-                   (1 = scrolling down by one screen height).
-    2. STYLE       the animation presets, and the look + PLACEMENT of every line (one rule per line id).
-    3. THE STORY   one <p class="line"> per line, with its own data-at (when it comes in).
-    4. ENGINE      reads the scroll, nothing else. You shouldn't need to touch it.
+  This file is the page itself:
+    1. STYLE       the animation presets, and the look + PLACEMENT of every line (one rule per line id).
+    2. THE STORY   one <p class="line"> per line, with its own data-at (when it comes in).
+  context.js has the rest: the settings (CONFIG: speed, picture, grain, fade out) and the code that turns the
+  scroll into what you see. Timing numbers (data-at...) are explained there: one number `pos` goes 0, 1, 2... as
+  you scroll, always the same amount of scrolling per unit whatever the screen.
 
-  Finding the right data-at: set debug: true in CONFIG (or press D on the page). A readout in the corner shows
-  the scroll position in the same units as data-at.
+  Finding the right data-at: press D on the page (or set debug: true in context.js) to show `pos`.
 -->
 <html lang="en">
 
@@ -27,77 +26,25 @@
     <script src="../page.js"></script>
     <link rel="stylesheet" href="../page.css">
 
-    <!-- ============================================================
-         1. CONFIG
-    ============================================================ -->
-    <script>
-        const CONFIG = {
-            // The picture (vertical). It lives in the the/ folder: vaca-bg.jpg (.jpeg, .png, .webp also work, tried in that order)
-            image: { name: 'vaca-bg', exts: ['jpg', 'jpeg', 'png', 'webp'] },
-
-            // Film grain on top of the picture (under the text). It fades out with the background.
-            // The pattern is the same random-per-pixel noise as fog.js, but re-rolled fps times a second.
-            grain: {
-                on: true,
-                style: 'both',   // 'both' = grain lightens and darkens (film look). 'dark' = only darkens (what fog.js does)
-                amount: 0.05,    // strength, 0 to 1
-                size: 1,         // size of one grain in screen px. Bigger = coarser (and cheaper)
-                fps: 24,         // how many times a second the grain changes. 0 = still
-            },
-
-            // ONE number to speed up / slow down the whole story. Multiplies every time below (data-at, len, hold,
-            // out, pan, fadeOut, length). 1 = as written. 0.5 = twice as fast (half the scrolling). 2 = twice as slow.
-            stretch: 0.5,
-
-            // How much scrolling the page has in total, in screens (before stretch).
-            length: 14.5,
-
-            // The square window sliding from the top of the picture to the bottom, between these scroll positions.
-            // before "from" it sits at the top, after "to" it stays at the bottom.
-            pan: { from: 0, to: 13.3, ease: 'linear' },
-
-            // After the story: the background fades to black between these positions.
-            // text: true makes the lines fade away with it. false = they stay.
-            // (a line with data-sync="fadeOut" comes in exactly during this fade)
-            fadeOut: { from: 13.3, to: 14.5, ease: 'linear', text: false },
-
-            // Defaults for every line. Each can be overridden on a line with data-len, data-hold, data-out,
-            // data-anim, data-ease (see the story below). len + hold + out = the line's whole slot. Lines that sit
-            // in the same spot need that to be at most the gap to the next line, or they overlap while swapping.
-            line: {
-                anim: 'fade',    // fade, rise, drop, left, right, blur, zoom, wipe, words, type, riseup, slide  (defined in STYLE below)
-                ease: 'out',     // linear, in, out, inOut
-                len: 0.3,        // how much scrolling the line takes to come in
-                hold: 0.4,       // how long it stays fully visible after that. 'stay' = never leaves
-                out: 0.3,        // how much scrolling it takes to leave
-                gap: 1.1,        // a line with no data-at comes in this long after the one before it
-            },
-
-            // Scroll feel for this page only, on top of the site's settings (see LENIS in script.js).
-            // wheelMultiplier 1 = the mouse wheel moves twice as far as on the homepage. {} = same as the homepage.
-            lenis: { wheelMultiplier: 1 },
-
-            // Shows a readout of the scroll position in the corner. Pressing D on the page toggles it too.
-            debug: false,
-        };
-        window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts the smooth scroll
-    </script>
+    <script src="context.js"></script>
 
     <!-- ============================================================
-         2. STYLE
+         1. STYLE
     ============================================================ -->
     <style>
         :root {
             --dim: 0.3;         /* black over the picture (0 = none, 1 = black) */
             --size: clamp(0.95rem, min(1.7vw, 2.4vh), 1.5rem);     /* text size: scales with the screen */
             --edge: var(--pad);                                    /* gap between text and the screen edge */
-            --bottom: var(--pad);                                  /* same, for text at the bottom (see touch screens below) */
+            --S: max(100vw, 100vh);                                /* side of the background square (it covers the screen) */
+            --stage-bottom: 0px;                                   /* how much of the bottom of the screen the text area leaves out */
         }
 
-        /* touch screens: the menu button is at the bottom right, so bottom text sits above it */
+        /* touch screens: the menu button is at the bottom right. The text area ends just above it, so for the text
+           that space is where the screen ends: "bottom" and "centred" are all measured above the button. */
         @media (hover: none), (pointer: coarse) {
             :root {
-                --bottom: calc(var(--pad) * 2 + var(--close-size));
+                --stage-bottom: calc(var(--pad) + var(--close-size) + env(safe-area-inset-bottom, 0px));   /* = the top of the button */
             }
         }
 
@@ -167,7 +114,18 @@
            edit / add a [data-anim] rule. No shadows anywhere. */
         .stage {
             position: fixed;
+            inset: 0 0 var(--stage-bottom) 0;
+            overflow: hidden;
+            overflow: clip;             /* text that moves out of the text area is cut at its edge, like leaving the screen */
+            pointer-events: none;
+        }
+
+        /* the dark cover that comes with a line that has data-veil (its opacity is set by the script) */
+        .veil {
+            position: fixed;
             inset: 0;
+            background: #000;
+            opacity: 0;
             pointer-events: none;
         }
 
@@ -201,6 +159,37 @@
         /* slide: slides in from the left while fading in, slides out to the right while fading out */
         .line[data-anim="slide"] {
             translate: calc((1 - var(--pin, 0)) * -10vw + var(--pout, 0) * 10vw) 0;
+        }
+
+        /* fall: comes down from the top of the screen to the bottom, in one straight move over the whole of its
+           stay (--pin goes 0 -> 1 linearly, so use data-ease="linear"). Starts just above the top, ends just below
+           the bottom: top = how far down, the translate takes its own height back out. Horizontal placement is yours. */
+        .line[data-anim="fall"] {
+            opacity: 1;
+            top: calc(var(--pin, 0) * 100%);
+            translate: 0 calc((1 - var(--pin, 0)) * -100%);
+        }
+
+        /* drift: crosses the screen right to left over the whole of its stay (data-ease="linear"), fading in and out
+           at the ends. Its height follows a path that belongs to the background square, not to the screen: its centre
+           goes from 1/8 to 3/8 of the square's side down from the top (the middle of the upper quarter -> the middle
+           of the second quarter of the square), so it passes the same spot of the picture on every screen shape. */
+        .line[data-anim="drift"] {
+            opacity: min(1, calc(var(--pin, 0) * 4), calc((1 - var(--pin, 0)) * 4));
+            left: calc((1 - var(--pin, 0)) * 100%);
+            top: calc(var(--S) * (0.125 + 0.25 * var(--pin, 0)));
+            translate: calc(var(--pin, 0) * -100%) -50%;
+        }
+
+        /* data-mode="trigger": not scrolled, switched. On at its data-at, off when the next line starts (or at
+           data-until), and it fades by time (CONFIG.trigger.fade), the script only adds / removes .shown */
+        .line[data-mode="trigger"] {
+            opacity: 0;
+            transition: opacity var(--fade, 0.8s) linear;
+        }
+
+        .line[data-mode="trigger"].shown {
+            opacity: 1;
         }
 
         /* words / type: the script cuts the line into words / letters (.u). Each one has its number (--i) and
@@ -247,8 +236,9 @@
         /* ---------- PLACEMENT: where every line sits ----------
            left / right / top / bottom, transform, text-align, max-width, font-size, color... anything goes.
            Don't use `translate` or `scale` here (the animations use those); `transform` is free.
-           --edge and --bottom are the gaps to the screen edge. The menu button is top right on a mouse
-           screen, bottom right on a touch screen (--bottom already stays clear of it). */
+           --edge is the gap to the edge. Percentages and "bottom" are relative to the text area, which is the whole
+           screen, except on touch screens where it ends above the menu button (bottom right there; top right on a
+           mouse screen, so keep that corner free). */
 
         /* 1  centred, middle of the upper half, black */
         #l1 {
@@ -262,73 +252,80 @@
         /* 2  bottom left corner, left aligned, lines break as written */
         #l2 {
             left: var(--edge);
-            bottom: var(--bottom);
+            bottom: var(--edge);
             text-align: left;
-            --chars: 42;
+            --chars: 30;
         }
 
-        /* 3  bottom centre */
+        /* 3  centred horizontally. Its height is the "fall" animation (top to bottom), so no top / bottom here */
         #l3 {
             left: 50%;
-            bottom: var(--bottom);
             transform: translateX(-50%);
             text-align: center;
         }
 
-        /* 4  bottom right corner, right aligned, lines break as written */
+        /* 4  bottom centre, lines break as written */
         #l4 {
-            right: var(--edge);
-            bottom: var(--bottom);
-            text-align: right;
-            --chars: 36;
-        }
-
-        /* 5  the whole width of the bottom. The text size is worked out so it fits on one line when the screen is
-              wide enough (138 = number of letters + a few spare), on a narrow screen it wraps and fills the width */
-        #l5 {
-            left: var(--edge);
-            right: var(--edge);
-            bottom: var(--bottom);
-            width: auto;
-            max-width: none;
-            text-align: justify;
-            font-size: max(0.8rem, calc((100vw - 2 * var(--edge)) / (138 * 0.612)));
-        }
-
-        /* 6  top, centred */
-        #l6 {
             left: 50%;
-            top: var(--edge);
+            bottom: var(--edge);
             transform: translateX(-50%);
             text-align: center;
+            --chars: 35;
         }
 
-        /* 7 to 10  vertically centred, left aligned. All four in the same spot, one after the other */
-        #l7, #l8, #l9, #l10 {
-            left: var(--edge);
-            top: 50%;
-            transform: translateY(-50%);
-            text-align: left;
-        }
-
-        /* 11  dead centre */
-        #l11 {
+        /* 5, 6, 7  dead centre. 5 and 6 keep their line breaks. */
+        #l5, #l6, #l7 {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
         }
 
-        /* 12  vertically centred, right aligned */
-        #l12 {
+        #l5 { --chars: 39; }
+        #l6 { --chars: 52; }
+
+        /* 8, 9  vertically centred, left aligned. 8 keeps its line breaks. */
+        #l8, #l9 {
+            left: var(--edge);
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: left;
+        }
+
+        #l8 { --chars: 29; }
+
+        /* 10  dead centre */
+        #l10 {
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        /* 11  vertically centred, right aligned */
+        #l11 {
             right: var(--edge);
             top: 50%;
             transform: translateY(-50%);
             text-align: right;
         }
 
-        /* 13  centred, comes in as the background goes */
+        /* 12  crosses the screen right to left along the path (the "drift" animation sets left and top).
+               Text is centred on itself. */
+        #l12 {
+            text-align: center;
+        }
+
+        /* 13  vertically centred, left aligned */
         #l13 {
+            left: var(--edge);
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: left;
+        }
+
+        /* 14  centred, comes in as the background goes */
+        #l14 {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
@@ -365,272 +362,62 @@
         </div>
         <canvas class="grain" id="grain"></canvas>
     </div>
+    <div class="veil" id="veil"></div>
 
     <!-- ============================================================
-         3. THE STORY
-         data-at    scroll position (in screens) where the line starts coming in. Leave it out and the line
+         2. THE STORY
+         data-at    where (in pos units, see context.js) the line starts coming in. Leave it out and the line
                     follows the one before it by CONFIG.line.gap.
-         Optional on any line: data-anim, data-ease, data-len, data-hold ("stay" = never leaves), data-out,
-                    data-sync="fadeOut" (comes in exactly while the background fades out, ignores data-at / data-len)
+         A line leaves exactly when the next one comes in (one fades out as the next fades in, never an empty
+         moment). The last line stays.
+         Optional on any line: data-anim, data-ease, data-len (how long it takes to come in),
+                    data-hold ("stay" = never leaves, a number = stays that long instead of leaving when the next comes in),
+                    data-out (how long it takes to leave),
+                    data-sync="fadeOut" (comes in exactly while the background fades out, ignores data-at / data-len),
+                    data-mode="trigger" (switched on / off by position instead of scrolled, fades by time; data-until, data-fade),
+                    data-veil="0.2" (a black cover at that opacity comes and goes with the line)
          Placement and colour are in the STYLE above, by id.
     ============================================================ -->
     <div class="stage" id="stage">
-        <p class="line" id="l1" data-at="0.3">Mid-2021, I was 14.</p>
+        <!-- fades in the moment you start scrolling and out again, no waiting in between -->
+        <p class="line" id="l1" data-at="0" data-len="0.7" data-hold="0" data-out="0.7" data-ease="inOut">Mid-2021, I was 14.</p>
 
-        <p class="line fit" id="l2" data-at="1.2">I went on summer vacation<br>to Charlevoix with the neighbor's RV.<br>We stood at <a href="https://www.miradorsurlefief.com/fr/chalet/chalet-mirador-3" target="_blank" rel="noopener">Chalet Mirador</a> for a few days.</p>
+        <p class="line fit" id="l2" data-at="1" data-out="0.3">I went on<br>summer vacation<br>to Charlevoix with<br>the neighbor's RV.<br>We stood at<br><a href="https://www.miradorsurlefief.com/fr/chalet/chalet-mirador-3" target="_blank" rel="noopener">Chalet Mirador</a> for a few days.</p>
 
-        <p class="line" id="l3" data-at="2.3" data-anim="riseup" data-ease="inOut" data-out="0.6">I remember sitting in the RV looking out the window admiring everything, filming alot of it.</p>
+        <!-- starts falling as 2 starts fading, lasts 2 units, exits at the bottom at 4.5 (line 4 starts then) -->
+        <p class="line" id="l3" data-at="2.5" data-len="2" data-anim="fall" data-ease="linear" data-hold="stay">I remember sitting in the RV looking out the window admiring everything, filming alot of it.</p>
 
-        <p class="line fit" id="l4" data-at="3.4">I had recently discovered Lil Peep,<br>and with him, The Microphones.</p>
+        <!-- not scrolled: on at 4.5 (= when 3 has left the screen), off when 5 starts (or if you scroll back above 4.5) -->
+        <p class="line fit" id="l4" data-at="4.5" data-mode="trigger">I had recently discovered Lil Peep,<br>and with him, The Microphones.</p>
 
-        <p class="line" id="l5" data-at="4.5">I brought my dad's electric guitar (no amp). Many nights in my room and in the living room, I remember playing Headless Horseman alone.</p>
+        <!-- 5 and 6: instant (data-len="0"), 6 replaces 5 with no gap -->
+        <p class="line fit" id="l5" data-at="5.9" data-len="0">I brought my dad's electric guitar (no amp)</p>
 
-        <p class="line" id="l6" data-at="5.6">I felt meaning.</p>
+        <p class="line fit" id="l6" data-at="6.9" data-len="0">I remember playing Headless Horseman alone<br>many nights in my room and in the living room.</p>
 
-        <p class="line" id="l7" data-at="6.7">I slept in a room on the second story with three beds: one twin by the window, another by the wall, and a double in the center.</p>
+        <!-- instant, with a 20% black cover over the picture; both fade away together as 8 comes in -->
+        <p class="line" id="l7" data-at="8.3" data-len="0" data-veil="0.2">I felt meaning.</p>
 
-        <p class="line" id="l8" data-at="7.8">The beds, and especially pillows, were blissfully comfortable and tepid.</p>
+        <!-- fades in, then is replaced instantly by 9 (data-out="0") -->
+        <p class="line fit" id="l8" data-at="9.1" data-out="0">I slept in a room on the<br>second story with three beds:<br>one twin by the window,<br>another by the wall,<br>and a double in the center.</p>
 
-        <p class="line" id="l9" data-at="8.9">I remember listening to the trees rustling in the breeze creating natural white noise, like waves by the ocean.</p>
+        <!-- instant in, fades away as 10 comes in -->
+        <p class="line" id="l9" data-at="10.7" data-len="0">The beds, and especially pillows, were blissfully comfortable and tepid.</p>
 
-        <p class="line" id="l10" data-at="10">My mom would get angry every time, worried I'd get sick. Well I'd die to miss it.</p>
+        <p class="line" id="l10" data-at="11.9">I remember listening to the trees rustling in the breeze. It sounded like waves by the ocean.</p>
 
-        <p class="line" id="l11" data-at="11.1" data-anim="slide" data-ease="inOut">This vacation, I believe, forever changed the path I'd take.</p>
+        <p class="line" id="l11" data-at="13.1" data-out="0.3">When my mom found out, she got angry, worried I'd get myself sick. But I'd die to miss it.</p>
 
-        <p class="line" id="l12" data-at="12.2">Before it, I was lost, not knowing what I liked, who I wanted to be, what I wanted to look forward to in life.</p>
+        <!-- crosses the screen right to left over 2 units, following the path in the picture (see "drift" in the STYLE) -->
+        <p class="line" id="l12" data-at="14.4" data-len="2" data-anim="drift" data-ease="linear" data-hold="stay">This vacation, I believe, forever changed the path I'd take.</p>
 
-        <p class="line" id="l13" data-sync="fadeOut" data-anim="type" data-ease="linear" data-hold="stay">With it, I found out.</p>
+        <p class="line" id="l13" data-at="16.1">Before it, I was lost, not knowing what I liked, who I wanted to be, what I wanted to look forward to in life.</p>
+
+        <p class="line" id="l14" data-sync="fadeOut" data-anim="type" data-ease="linear">That vacation, I found out.</p>
     </div>
 
     <div class="track" id="track"></div>
     <div class="hud" id="hud"></div>
-
-    <!-- ============================================================
-         4. ENGINE: turns the scroll position into --p / --pin / --pout (per line), --pan and the fade. No scroll
-         hijacking: the page scrolls normally (page.js gives it Lenis), and everything here is a function of how far
-         it has scrolled.
-    ============================================================ -->
-    <script>
-        (() => {
-            'use strict';
-
-            const K = CONFIG.stretch || 1;
-            const EASES = {
-                linear: (t) => t,
-                in: (t) => t * t * t,
-                out: (t) => 1 - Math.pow(1 - t, 3),
-                inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
-            };
-            const ease = (name, t) => (EASES[name] || EASES.linear)(t);
-            const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
-            const range = (s, from, to) => (to > from ? clamp01((s - from) / (to - from)) : (s >= to ? 1 : 0));
-
-            const bg = document.getElementById('bg');
-            const photo = document.getElementById('photo');
-            const stage = document.getElementById('stage');
-            const track = document.getElementById('track');
-            const hud = document.getElementById('hud');
-
-            /* ---- the picture: first of name.jpg / .jpeg / ... that loads ---- */
-            const urls = CONFIG.image.exts.map((ext) => `${CONFIG.image.name}.${ext}`);
-            let tries = 0;
-            photo.onload = () => {
-                // how far the picture can slide: its height minus the square's, as a share of its own height
-                const maxShift = Math.max(0, 1 - photo.naturalWidth / photo.naturalHeight);
-                photo.style.setProperty('--max-shift', (maxShift * 100) + '%');
-                photo.classList.add('ready');
-            };
-            photo.onerror = () => {
-                if (++tries < urls.length) photo.src = urls[tries];
-                else console.warn('context: no picture found. Add the/' + urls[0] + ' (or .jpeg / .png / .webp).');
-            };
-            photo.src = urls[0];
-
-            /* ---- the lines ---- */
-            const L = CONFIG.line;
-            const num = (el, key, fallback) => {
-                const v = parseFloat(el.dataset[key]);
-                return Number.isFinite(v) ? v : fallback;
-            };
-            let prevAt = -L.gap;
-            const lines = Array.from(stage.querySelectorAll('.line')).map((el) => {
-                const sync = el.dataset.sync === 'fadeOut';
-                const at = sync ? CONFIG.fadeOut.from : num(el, 'at', prevAt + L.gap);
-                const len = sync ? CONFIG.fadeOut.to - CONFIG.fadeOut.from : num(el, 'len', L.len);
-                prevAt = at;
-                const anim = el.dataset.anim || L.anim;
-                el.dataset.anim = anim;
-                const holdRaw = el.dataset.hold !== undefined ? el.dataset.hold : L.hold;
-                const item = {
-                    el,
-                    at: at * K,
-                    len: len * K,
-                    out: num(el, 'out', L.out) * K,
-                    hold: holdRaw === 'stay' ? Infinity : (parseFloat(holdRaw) || 0) * K,
-                    ease: el.dataset.ease || L.ease,
-                    p: -1, pin: -1, pout: -1,
-                };
-                if (anim === 'words' || anim === 'type') split(el, anim);
-                return item;
-            });
-
-            // words: every word is one .u. type: every letter is one .u, kept together in a .word so lines still wrap
-            function split(el, mode) {
-                const words = el.textContent.trim().split(/\s+/);
-                el.textContent = '';
-                const total = mode === 'words' ? words.length : words.join('').length;
-                let i = 0;
-                const unit = (text) => {
-                    const u = document.createElement('span');
-                    u.className = 'u';
-                    u.style.setProperty('--i', i++);
-                    u.style.setProperty('--n', total);
-                    u.textContent = text;
-                    return u;
-                };
-                words.forEach((w, wi) => {
-                    if (wi) el.appendChild(document.createTextNode(' '));
-                    if (mode === 'words') { el.appendChild(unit(w)); return; }
-                    const holder = document.createElement('span');
-                    holder.className = 'word';
-                    for (const ch of w) holder.appendChild(unit(ch));
-                    el.appendChild(holder);
-                });
-            }
-
-            /* ---- scroll -> everything ---- */
-            let lastPan = -1, lastFade = -1;
-
-            function render() {
-                const s = window.scrollY / window.innerHeight;          // scroll position, in screens
-
-                const pan = ease(CONFIG.pan.ease, range(s, CONFIG.pan.from * K, CONFIG.pan.to * K));
-                if (pan !== lastPan) { lastPan = pan; bg.style.setProperty('--pan', pan); }
-
-                const fade = 1 - ease(CONFIG.fadeOut.ease, range(s, CONFIG.fadeOut.from * K, CONFIG.fadeOut.to * K));
-                if (fade !== lastFade) {
-                    lastFade = fade;
-                    bg.style.setProperty('--bg-o', fade);
-                    if (CONFIG.fadeOut.text) stage.style.opacity = fade;
-                }
-
-                for (const l of lines) {
-                    const pin = ease(l.ease, range(s, l.at, l.at + l.len));
-                    let pout = 0;
-                    if (l.hold !== Infinity) {
-                        const outAt = l.at + l.len + l.hold;
-                        pout = ease(l.ease, range(s, outAt, outAt + l.out));
-                    }
-                    const p = Math.min(pin, 1 - pout);
-                    if (pin !== l.pin) { l.pin = pin; l.el.style.setProperty('--pin', pin); }
-                    if (pout !== l.pout) { l.pout = pout; l.el.style.setProperty('--pout', pout); }
-                    if (p !== l.p) {
-                        l.p = p;
-                        l.el.style.setProperty('--p', p);
-                        l.el.classList.toggle('off', p <= 0.001);      // not showing: hidden, so no invisible links
-                        l.el.classList.toggle('live', p > 0.3);        // showing enough to click its links
-                    }
-                }
-
-                if (hud.classList.contains('on')) {
-                    hud.textContent = `scroll ${(s / K).toFixed(2)} / ${CONFIG.length.toFixed(2)} screens  (data-at units)`;
-                }
-            }
-
-            function size() {
-                track.style.height = ((CONFIG.length * K + 1) * window.innerHeight) + 'px';
-                render();
-            }
-
-            /* ---- grain: one random value per cell, re-rolled CONFIG.grain.fps times a second ---- */
-            const G = CONFIG.grain;
-            const grainEl = document.getElementById('grain');
-
-            function startGrain() {
-                if (!G.on) { grainEl.remove(); return; }
-                const gl = grainEl.getContext('webgl', { antialias: false, premultipliedAlpha: true });
-                if (!gl) { grainEl.remove(); console.warn('context: WebGL unavailable, no grain.'); return; }
-
-                const vertexSrc = 'attribute vec2 a_position; void main() { gl_Position = vec4(a_position, 0.0, 1.0); }';
-                const fragmentSrc = `
-                    precision highp float;
-                    uniform float u_seed;
-                    uniform float u_amount;
-                    uniform float u_both;
-                    float random(vec2 p) {                                  // same hash as fog.js
-                        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-                        p3 += dot(p3, p3.yzx + 33.33);
-                        return fract((p3.x + p3.y) * p3.z);
-                    }
-                    void main() {
-                        float n = random(floor(gl_FragCoord.xy) + vec2(u_seed * 37.0, u_seed * 91.0));
-                        float a = u_amount;
-                        // premultiplied: 'both' = grey of brightness n at strength a, 'dark' = black at strength n * a
-                        gl_FragColor = u_both > 0.5 ? vec4(vec3(n * a), a) : vec4(0.0, 0.0, 0.0, n * a);
-                    }`;
-                const compile = (type, src) => {
-                    const sh = gl.createShader(type);
-                    gl.shaderSource(sh, src);
-                    gl.compileShader(sh);
-                    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(sh));
-                    return sh;
-                };
-                const program = gl.createProgram();
-                gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSrc));
-                gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSrc));
-                gl.linkProgram(program);
-                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                    console.error(gl.getProgramInfoLog(program));
-                    grainEl.remove();
-                    return;
-                }
-                gl.useProgram(program);
-
-                gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // one big triangle
-                const pos = gl.getAttribLocation(program, 'a_position');
-                gl.enableVertexAttribArray(pos);
-                gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-
-                const seed = gl.getUniformLocation(program, 'u_seed');
-                gl.uniform1f(gl.getUniformLocation(program, 'u_amount'), G.amount);
-                gl.uniform1f(gl.getUniformLocation(program, 'u_both'), G.style === 'dark' ? 0 : 1);
-
-                function draw() {
-                    gl.uniform1f(seed, Math.random() * 100);
-                    gl.drawArrays(gl.TRIANGLES, 0, 3);
-                }
-
-                function fit() {
-                    grainEl.width = Math.max(1, Math.ceil(window.innerWidth / G.size));
-                    grainEl.height = Math.max(1, Math.ceil(window.innerHeight / G.size));
-                    gl.viewport(0, 0, grainEl.width, grainEl.height);
-                    draw();
-                }
-                fit();
-                window.addEventListener('resize', fit);
-
-                const still = G.fps <= 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                if (still) return;
-                let last = 0;
-                const frame = (now) => {
-                    // no point drawing once the background has faded out
-                    if (now - last >= 1000 / G.fps && lastFade > 0.001) { last = now; draw(); }
-                    requestAnimationFrame(frame);
-                };
-                requestAnimationFrame(frame);
-            }
-
-            window.addEventListener('scroll', render, { passive: true });
-            window.addEventListener('resize', size);
-            window.addEventListener('keydown', (e) => {
-                if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) { hud.classList.toggle('on'); render(); }
-            });
-            if (CONFIG.debug) hud.classList.add('on');
-            size();
-            startGrain();
-        })();
-    </script>
 </body>
 
 </html>
