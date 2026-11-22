@@ -39,7 +39,7 @@
             --S: max(100vw, 100vh);                                /* side of the background square (it covers the screen) */
             --stage-bottom: 0px;                                   /* how much of the bottom of the screen the text area leaves out */
 
-            --glow-alpha: 0.4;      /* how dark the glow is at its darkest */
+            --glow-alpha: 0.3;      /* how dark the glow is at its darkest */
             --glow-blur: 1.5em;     /* how far it fades away (bigger = looser) */
             --glow-spread: 1.5em;   /* how far the dark core reaches past the text before it starts fading */
         }
@@ -100,7 +100,6 @@
             position: absolute;
             inset: 0 0 var(--stage-bottom) 0;
             z-index: 1;
-            overflow: hidden;
             pointer-events: none;
         }
 
@@ -124,9 +123,7 @@
            To change an animation or make a new one, edit / add a [data-anim] rule. */
         .stage {
             position: fixed;
-            inset: 0 0 var(--stage-bottom) 0;
-            overflow: hidden;
-            overflow: clip;             /* text that moves out of the text area is cut at its edge, like leaving the screen */
+            inset: 0 0 var(--stage-bottom) 0;   /* the layout box only: placement math is measured in it, nothing is clipped by it */
             pointer-events: none;
         }
 
@@ -176,7 +173,7 @@
            stay (--pin goes 0 -> 1 linearly, so use data-ease="linear"). */
         .line[data-anim="fall"] {
             opacity: 1;
-            top: calc(var(--pin, 0) * 100%);
+            top: calc(var(--pin, 0) * (100% + var(--stage-bottom)));   /* travels to the real screen bottom, past the menu strip */
             translate: 0 calc((1 - var(--pin, 0)) * -100%);
         }
 
