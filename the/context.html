@@ -8,7 +8,7 @@
   This file is the page itself:
     1. STYLE       the animation presets, and the look + PLACEMENT of every line (one rule per line id).
     2. THE STORY   one <p class="line"> per line, with its own data-at (when it comes in).
-  context.js has the rest: the settings (CONFIG: speed, picture, grain, fade out) and the code that turns the
+  context.js has the rest: the settings (CONFIG: speed, picture, grain, glow, fade out) and the code that turns the
   scroll into what you see. Timing numbers (data-at...) are explained there: one number `pos` goes 0, 1, 2... as
   you scroll, always the same amount of scrolling per unit whatever the screen.
 
@@ -38,6 +38,10 @@
             --edge: var(--pad);                                    /* gap between text and the screen edge */
             --S: max(100vw, 100vh);                                /* side of the background square (it covers the screen) */
             --stage-bottom: 0px;                                   /* how much of the bottom of the screen the text area leaves out */
+
+            --glow-alpha: 0.4;      /* how dark the glow is at its darkest */
+            --glow-blur: 1.5em;     /* how far it fades away (bigger = looser) */
+            --glow-spread: 1.5em;   /* how far the dark core reaches past the text before it starts fading */
         }
 
         /* touch screens: the menu button is at the bottom right. The text area ends just above it, so for the text
@@ -48,9 +52,7 @@
             }
         }
 
-        /* ---------- the background: a square window into the picture ----------
-           The square is as big as the longer side of the screen, stuck to the top and centred. Portrait screen:
-           you see all of its height. Landscape screen: you see its upper part. */
+        /* ---------- the background: a square window into the picture ---------- */
         .bg {
             position: fixed;
             inset: 0;
@@ -93,11 +95,20 @@
             background: rgba(0, 0, 0, var(--dim));
         }
 
+        /* the glows: blurred black copies of some lines, above the picture, under the grain */
+        .glows {
+            position: absolute;
+            inset: 0 0 var(--stage-bottom) 0;
+            z-index: 1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
         /* grain: a canvas with one pixel per grain, stretched over the screen without smoothing */
         .grain {
             position: absolute;
             inset: 0;
-            z-index: 1;
+            z-index: 2;
             display: block;
             width: 100%;
             height: 100%;
@@ -110,8 +121,7 @@
              --pin   how far in the line is (comes in: 0 -> 1, then stays 1)
              --pout  how far out it is (leaves: 0 -> 1)
              --p     both together: 0 -> 1 -> 0, the plain "how visible is it"
-           Everything below is just "what do these do", so to change an animation or make a new one,
-           edit / add a [data-anim] rule. No shadows anywhere. */
+           To change an animation or make a new one, edit / add a [data-anim] rule. */
         .stage {
             position: fixed;
             inset: 0 0 var(--stage-bottom) 0;
@@ -133,6 +143,7 @@
             position: absolute;
             width: max-content;
             max-width: min(32ch, 78%);
+            font-family: "Times New Roman", Times, serif;
             font-size: var(--size);
             line-height: 1.55;
             opacity: var(--p, 0);
@@ -162,8 +173,7 @@
         }
 
         /* fall: comes down from the top of the screen to the bottom, in one straight move over the whole of its
-           stay (--pin goes 0 -> 1 linearly, so use data-ease="linear"). Starts just above the top, ends just below
-           the bottom: top = how far down, the translate takes its own height back out. Horizontal placement is yours. */
+           stay (--pin goes 0 -> 1 linearly, so use data-ease="linear"). */
         .line[data-anim="fall"] {
             opacity: 1;
             top: calc(var(--pin, 0) * 100%);
@@ -171,9 +181,7 @@
         }
 
         /* drift: crosses the screen right to left over the whole of its stay (data-ease="linear"), fading in and out
-           at the ends. Its height follows a path that belongs to the background square, not to the screen: its centre
-           goes from 1/8 to 3/8 of the square's side down from the top (the middle of the upper quarter -> the middle
-           of the second quarter of the square), so it passes the same spot of the picture on every screen shape. */
+           at the ends, following a path that belongs to the background square. */
         .line[data-anim="drift"] {
             opacity: min(1, calc(var(--pin, 0) * 4), calc((1 - var(--pin, 0)) * 4));
             left: calc((1 - var(--pin, 0)) * 100%);
@@ -188,8 +196,6 @@
             transition: opacity var(--fade, 0.8s) linear;
         }
 
-        /* leaving because the next line has started (not because you scrolled back): data-fade-out (seconds) if the
-           line has one, else the same as the fade in */
         .line[data-mode="trigger"][data-leave="next"] {
             transition-duration: var(--fade-out, var(--fade, 0.8s));
         }
@@ -198,8 +204,7 @@
             opacity: 1;
         }
 
-        /* words / type: the script cuts the line into words / letters (.u). Each one has its number (--i) and
-           how many there are (--n), so --p * --n - --i is "how far in is this one" */
+        /* words / type: the script cuts the line into words / letters (.u). */
         .line[data-anim="words"],
         .line[data-anim="type"] { opacity: 1; }
 
@@ -231,6 +236,19 @@
             text-decoration-color: #fff;
         }
 
+        /* the glow copy of a line: same place and size, text invisible, a blurred black block shows instead */
+        .line.ghost {
+            color: transparent;
+            background: rgba(0, 0, 0, var(--glow-alpha));
+            box-shadow: 0 0 0 var(--glow-spread) rgba(0, 0, 0, var(--glow-alpha));
+            filter: blur(var(--glow-blur));
+            pointer-events: none;
+        }
+
+        .line.ghost a {
+            text-decoration: none;
+        }
+
         /* .fit: a line that must keep its exact line breaks (white-space: nowrap). On a narrow screen the text
            shrinks just enough that the longest line (--chars letters) still fits between the edges. */
         .line.fit {
@@ -240,13 +258,10 @@
         }
 
         /* ---------- PLACEMENT: where every line sits ----------
-           left / right / top / bottom, transform, text-align, max-width, font-size, color... anything goes.
            Don't use `translate` or `scale` here (the animations use those); `transform` is free.
-           --edge is the gap to the edge. Percentages and "bottom" are relative to the text area, which is the whole
-           screen, except on touch screens where it ends above the menu button (bottom right there; top right on a
-           mouse screen, so keep that corner free). */
+           The #lN-glow copies are listed with their lines so they sit in exactly the same place. */
 
-        /* 1  centred, middle of the upper half, black */
+        /* 1  centred, middle of the upper half */
         #l1 {
             left: 50%;
             top: 25%;
@@ -255,14 +270,14 @@
         }
 
         /* 2  bottom left corner, left aligned, lines break as written */
-        #l2 {
+        #l2, #l2-glow {
             left: var(--edge);
             bottom: var(--edge);
             text-align: left;
             --chars: 30;
         }
 
-        /* 3  centred horizontally. Its height is the "fall" animation (top to bottom), so no top / bottom here */
+        /* 3  centred horizontally. Its height is the "fall" animation */
         #l3 {
             left: 50%;
             transform: translateX(-50%);
@@ -270,7 +285,7 @@
         }
 
         /* 4  bottom centre, lines break as written */
-        #l4 {
+        #l4, #l4-glow {
             left: 50%;
             bottom: var(--edge);
             transform: translateX(-50%);
@@ -290,17 +305,17 @@
         #l6 { --chars: 46; }
 
         /* 8, 9  vertically centred, left aligned. 8 keeps its line breaks. */
-        #l8, #l9 {
+        #l8, #l9, #l8-glow, #l9-glow {
             left: var(--edge);
             top: 50%;
             transform: translateY(-50%);
             text-align: left;
         }
 
-        #l8 { --chars: 29; }
+        #l8, #l8-glow { --chars: 29; }
 
         /* 10  dead centre */
-        #l10 {
+        #l10, #l10-glow {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
@@ -308,21 +323,20 @@
         }
 
         /* 11  vertically centred, right aligned */
-        #l11 {
+        #l11, #l11-glow {
             right: var(--edge);
             top: 50%;
             transform: translateY(-50%);
             text-align: right;
         }
 
-        /* 12  crosses the screen right to left along the path (the "drift" animation sets left and top).
-               Text is centred on itself. */
+        /* 12  crosses the screen right to left (the "drift" animation sets left and top). */
         #l12 {
             text-align: center;
         }
 
         /* 13  vertically centred, left aligned */
-        #l13 {
+        #l13, #l13-glow {
             left: var(--edge);
             top: 50%;
             transform: translateY(-50%);
@@ -373,46 +387,32 @@
          2. THE STORY
          data-at    where (in pos units, see context.js) the line starts coming in. Leave it out and the line
                     follows the one before it by CONFIG.line.gap.
-         A line leaves exactly when the next one comes in (one fades out as the next fades in, never an empty
-         moment). The last line stays.
-         Optional on any line: data-anim, data-ease, data-len (how long it takes to come in),
-                    data-hold ("stay" = never leaves, a number = stays that long instead of leaving when the next comes in),
-                    data-out (how long it takes to leave),
-                    data-sync="fadeOut" (comes in exactly while the background fades out, ignores data-at / data-len),
-                    data-mode="trigger" (switched on / off by position instead of scrolled, fades by time; data-until, data-fade, data-fade-out),
-                    data-veil="0.2" (a black cover at that opacity comes and goes with the line)
-         Placement and colour are in the STYLE above, by id.
+         A line leaves exactly when the next one comes in. The last line stays.
+         Optional on any line: data-anim, data-ease, data-len, data-hold ("stay" or a number), data-out,
+                    data-sync="fadeOut", data-mode="trigger" (data-until, data-fade, data-fade-out),
+                    data-veil="0.2"
     ============================================================ -->
     <div class="stage" id="stage">
-        <!-- fades in the moment you start scrolling and out again, no waiting in between -->
         <p class="line" id="l1" data-at="0" data-len="0.7" data-hold="0" data-out="0.7" data-ease="inOut">Mid-2021, I was 14.</p>
 
         <p class="line fit" id="l2" data-at="1" data-out="0.3">I went on<br>summer vacation to<br>Charlevoix. We stood at<br><a href="https://www.miradorsurlefief.com/fr/chalet/chalet-mirador-3" target="_blank" rel="noopener">Chalet Mirador</a> for a few days.</p>
 
-        <!-- starts falling as 2 starts fading, lasts 2 units, exits at the bottom at 4.5 (line 4 starts then) -->
         <p class="line" id="l3" data-at="2.5" data-len="2" data-anim="fall" data-ease="linear" data-hold="stay">I remember sitting in the RV looking out the window admiring everything, filming alot of it.</p>
 
-        <!-- not scrolled: on at 4.5 (= when 3 has left the screen), off when 5 starts (or if you scroll back above 4.5) -->
         <p class="line fit" id="l4" data-at="4.5" data-mode="trigger">I had recently discovered Lil Peep,<br>and with him, The Microphones.</p>
 
-        <!-- 5: fades in at the same time as 4 fades out (both by time, same speed). It leaves instantly (data-fade-out="0")
-             because 6 replaces it with no gap -->
         <p class="line fit" id="l5" data-at="5.9" data-mode="trigger" data-fade-out="0">I brought my dad's electric guitar with no amp.</p>
 
-        <!-- 6: instant in, stays 1.8, fades out over 0.4 (ends at 9.1), and only then does 8 start fading in -->
         <p class="line fit" id="l6" data-at="7.5" data-len="0" data-hold="1.8" data-out="0.4">I remember playing Headless Horseman<br>many nights alone in my room and living room.</p>
 
-        <!-- fades in, then is replaced instantly by 9 (data-out="0") -->
         <p class="line fit" id="l8" data-at="9.1" data-out="0">My room was on the<br>second story with three beds.<br>My bed was by the window.</p>
 
-        <!-- instant in, fades away as 10 comes in -->
         <p class="line" id="l9" data-at="10.7" data-len="0">The mattresses, and especially pillows, were blissfully comfortable and tepid.</p>
 
         <p class="line" id="l10" data-at="11.9">The trees were rustling in the breeze as I fell asleep. It sounded like waves by the ocean.</p>
 
         <p class="line" id="l11" data-at="13.1" data-out="0.3">When my mom found out, she got angry, worried I'd get myself sick. But I'd die to miss it.</p>
 
-        <!-- crosses the screen right to left over 2 units, following the path in the picture (see "drift" in the STYLE) -->
         <p class="line" id="l12" data-at="14.4" data-len="2" data-anim="drift" data-ease="linear" data-hold="stay">That vacation forever<br>changed my life's path.</p>
 
         <p class="line" id="l13" data-at="16.1">Before, I was lost,<br>not knowing what I liked,<br>what I wanted to look<br>forward to in life.</p>

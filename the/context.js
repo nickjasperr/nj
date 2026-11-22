@@ -1,15 +1,12 @@
 /* ==================================================================
-   context.js: everything the context page does (the/context.html loads this).
+   context.js: everything the context page does (context.html loads this).
    page.js is shared by every page and has nothing of this in it.
 
    HOW IT WORKS
    There is one number, `pos`. It is the scroll distance divided by CONFIG.pxPerUnit, a fixed amount of pixels:
    scrolled 0 px = 0, scrolled 400 px = 1, 800 px = 2... The screen's height / width / aspect ratio are never
    part of it, so the story always takes the same amount of scrolling, on any screen.
-   Everything on the page is then a function of that number: where the picture is, how visible each line is, how
-   far the background has faded. Nothing is animated by time.
-
-   Everything below is in those units (1 unit = pxPerUnit px of scrolling).
+   Everything on the page is then a function of that number. Nothing is animated by time.
 
    1. CONFIG  : the settings
    2. ENGINE  : you shouldn't need to touch it
@@ -19,18 +16,21 @@
    1. CONFIG
 ------------------------------------------------------------------ */
 const CONFIG = {
-    // The picture (vertical). It lives in the the/ folder: vaca-bg.jpg (.jpeg, .png, .webp also work, tried in that order)
+    // The picture (vertical). vaca-bg.jpg (.jpeg, .png, .webp also work, tried in that order)
     image: { name: 'vaca-bg', exts: ['jpg', 'jpeg', 'png', 'webp'] },
 
     // Film grain on top of the picture (under the text). It fades out with the background.
-    // The pattern is the same random-per-pixel noise as fog.js, but re-rolled fps times a second.
     grain: {
         on: true,
-        style: 'both',   // 'both' = grain lightens and darkens (film look). 'dark' = only darkens (what fog.js does)
+        style: 'both',   // 'both' = grain lightens and darkens (film look). 'dark' = only darkens
         amount: 0.05,    // strength, 0 to 1
         size: 1,         // size of one grain in screen px. Bigger = coarser (and cheaper)
         fps: 24,         // how many times a second the grain changes. 0 = still
     },
+
+    // A loose black glow behind these lines. It sits between the picture and the grain, and fades with the background.
+    // Its strength, blur and size are --glow-alpha / --glow-blur / --glow-spread in context.html.
+    glow: { ids: ['l2', 'l4', 'l8', 'l9', 'l10', 'l11', 'l13'] },
 
     // THE speed setting: how many px of scrolling make `pos` go up by 1. Lower = the story goes faster.
     pxPerUnit: 400,
@@ -39,25 +39,20 @@ const CONFIG = {
     length: 18.8,
 
     // The square window sliding from the top of the picture to the bottom, between these two pos values.
-    // before "from" it sits at the top, after "to" it stays at the bottom. It keeps moving during the fade out.
     pan: { from: 0, to: 18.8, ease: 'linear' },
 
     // After the story: the background fades to black between these two pos values.
     // text: true makes the lines fade away with it. false = they stay.
-    // (a line with data-sync="fadeOut" comes in exactly during this fade)
     fadeOut: { from: 17.6, to: 18.8, ease: 'linear', text: false },
 
     // Defaults for every line. Each can be overridden on the line itself with data-anim, data-ease, data-len,
     // data-hold, data-out (see the story in context.html).
     line: {
-        anim: 'fade',    // fade, rise, drop, left, right, blur, zoom, wipe, words, type, riseup, slide, fall, drift  (defined in context.html)
+        anim: 'fade',    // fade, rise, drop, left, right, blur, zoom, wipe, words, type, riseup, slide, fall, drift
         ease: 'out',     // linear, in, out, inOut
         len: 0.3,        // how much scrolling a line takes to come in
 
-        // When a line leaves, and how long that takes.
-        // hold 'next' (default): it starts leaving exactly when the next line starts coming in, and takes as long as
-        //                        that line takes to come in. So one fades out while the next fades in: never an empty
-        //                        moment between two lines. The last line has no next, so it stays.
+        // hold 'next' (default): it starts leaving exactly when the next line starts coming in.
         // hold a number: it stays fully visible that long after it has come in, then leaves. 'stay' = never leaves.
         // out  'next' (default): as above. A number: leaves over that much scrolling.
         hold: 'next',
@@ -66,13 +61,11 @@ const CONFIG = {
         gap: 1.1,        // a line with no data-at comes in this long after the one before it
     },
 
-    // Lines with data-mode="trigger" don't follow the scroll: they switch on at their data-at and off when the next
-    // line starts (or at data-until), and fade by TIME, this many seconds, whatever you do with the scroll.
-    // data-fade="0.5" changes it for one line, data-fade-out="0" is only for when it leaves because the next line started.
+    // Lines with data-mode="trigger" switch on at their data-at and off when the next line starts (or at
+    // data-until), and fade by TIME, this many seconds, whatever you do with the scroll.
     trigger: { fade: 0.8 },
 
     // Scroll feel for this page only, on top of the site's settings (see LENIS in script.js).
-    // wheelMultiplier 1 = the mouse wheel moves twice as far as on the homepage. {} = same as the homepage.
     lenis: { wheelMultiplier: 1 },
 
     // Shows a readout of `pos` in the corner. Pressing D on the page toggles it too.
@@ -87,8 +80,6 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
 (() => {
     'use strict';
 
-    // page.js marks the page as "embedded" when the site opened it. Opened any other way it is about to be replaced
-    // by the 404 page, so there is nothing to start.
     if (!document.documentElement.classList.contains('embedded')) return;
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
@@ -116,16 +107,21 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
         const urls = CONFIG.image.exts.map((ext) => `${CONFIG.image.name}.${ext}`);
         let tries = 0;
         photo.onload = () => {
-            // how far the picture can slide: its height minus the square's, as a share of its own height
             const maxShift = Math.max(0, 1 - photo.naturalWidth / photo.naturalHeight);
             photo.style.setProperty('--max-shift', (maxShift * 100) + '%');
             photo.classList.add('ready');
         };
         photo.onerror = () => {
             if (++tries < urls.length) photo.src = urls[tries];
-            else console.warn('context: no picture found. Add the/' + urls[0] + ' (or .jpeg / .png / .webp).');
+            else console.warn('context: no picture found. Add ' + urls[0] + ' (or .jpeg / .png / .webp).');
         };
         photo.src = urls[0];
+
+        /* ---- glow layer: copies of some lines, between the picture and the grain ---- */
+        const glowIds = new Set(CONFIG.glow.ids);
+        const glows = document.createElement('div');
+        glows.className = 'glows';
+        bg.insertBefore(glows, bg.querySelector('.grain'));
 
         /* ---- the lines ---- */
         const L = CONFIG.line;
@@ -148,15 +144,24 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
                 el.style.setProperty('--fade', num(el, 'fade', CONFIG.trigger.fade) + 's');
                 if (el.dataset.fadeOut !== undefined) el.style.setProperty('--fade-out', num(el, 'fadeOut', CONFIG.trigger.fade) + 's');
             }
+            let ghost = null;
+            if (glowIds.has(el.id)) {
+                ghost = el.cloneNode(true);
+                // same id as the line on purpose: every CSS rule for #lN (placement, --chars) then applies to the
+                // glow copy too, so any line can be added to CONFIG.glow.ids with no CSS changes
+                ghost.classList.add('ghost');
+                ghost.setAttribute('aria-hidden', 'true');
+                glows.appendChild(ghost);
+            }
             return {
-                el, at, len, mode,
-                veil: num(el, 'veil', 0),                    // data-veil="0.2": a black cover at 20% comes with this line
+                el, ghost, at, len, mode,
+                veil: num(el, 'veil', 0),
                 until: el.dataset.until !== undefined ? num(el, 'until', Infinity) : null,
                 on: false,
                 hold: el.dataset.hold !== undefined ? el.dataset.hold : L.hold,
                 out: el.dataset.out !== undefined ? el.dataset.out : L.out,
                 ease: el.dataset.ease || L.ease,
-                outAt: Infinity, outLen: 0, outEase: null,  // worked out below, once every line's start is known
+                outAt: Infinity, outLen: 0, outEase: null,
                 p: -1, pin: -1, pout: -1,
             };
         });
@@ -172,8 +177,6 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
             if (l.out === 'next') l.outLen = next ? next.len : L.len;
             else l.outLen = parseFloat(l.out) || 0;
 
-            // leaving with the next line's own timing (same window, same curve) means the two always add up to
-            // exactly 1: one is as much out as the other is in, so the text never dips (or doubles up) in between
             l.outEase = (l.hold === 'next' && l.out === 'next' && next) ? next.ease : l.ease;
         });
 
@@ -223,22 +226,31 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
                     const on = pos >= l.at && pos < l.until;
                     if (on !== l.on) {
                         l.on = on;
-                        // leaving because the next line started (not because you scrolled back) can have its own speed
-                        l.el.dataset.leave = (!on && pos >= l.until) ? 'next' : 'back';
+                        const leave = (!on && pos >= l.until) ? 'next' : 'back';
+                        l.el.dataset.leave = leave;
                         l.el.classList.toggle('shown', on);
+                        if (l.ghost) {
+                            l.ghost.dataset.leave = leave;
+                            l.ghost.classList.toggle('shown', on);
+                        }
                     }
                     continue;
                 }
                 const pin = ease(l.ease, range(pos, l.at, l.at + l.len));
                 const pout = l.outAt === Infinity ? 0 : ease(l.outEase, range(pos, l.outAt, l.outAt + l.outLen));
                 const p = Math.min(pin, 1 - pout);
-                if (pin !== l.pin) { l.pin = pin; l.el.style.setProperty('--pin', pin); }
-                if (pout !== l.pout) { l.pout = pout; l.el.style.setProperty('--pout', pout); }
+                const both = (name, v) => {
+                    l.el.style.setProperty(name, v);
+                    if (l.ghost) l.ghost.style.setProperty(name, v);
+                };
+                if (pin !== l.pin) { l.pin = pin; both('--pin', pin); }
+                if (pout !== l.pout) { l.pout = pout; both('--pout', pout); }
                 if (p !== l.p) {
                     l.p = p;
-                    l.el.style.setProperty('--p', p);
-                    l.el.classList.toggle('off', p <= 0.001);      // not showing: hidden, so no invisible links
-                    l.el.classList.toggle('live', p > 0.3);        // showing enough to click its links
+                    both('--p', p);
+                    l.el.classList.toggle('off', p <= 0.001);
+                    l.el.classList.toggle('live', p > 0.3);
+                    if (l.ghost) l.ghost.classList.toggle('off', p <= 0.001);
                 }
                 if (l.veil) veil = Math.max(veil, p * l.veil);
             }
@@ -249,8 +261,6 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
             }
         }
 
-        // the page is exactly as tall as it takes to scroll pos from 0 to CONFIG.length (plus the one screen
-        // the browser always shows), whatever the screen
         function size() {
             track.style.height = (CONFIG.length * CONFIG.pxPerUnit + window.innerHeight) + 'px';
             render();
@@ -271,7 +281,7 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
                 uniform float u_seed;
                 uniform float u_amount;
                 uniform float u_both;
-                float random(vec2 p) {                                  // same hash as fog.js
+                float random(vec2 p) {
                     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
                     p3 += dot(p3, p3.yzx + 33.33);
                     return fract((p3.x + p3.y) * p3.z);
@@ -279,7 +289,6 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
                 void main() {
                     float n = random(floor(gl_FragCoord.xy) + vec2(u_seed * 37.0, u_seed * 91.0));
                     float a = u_amount;
-                    // premultiplied: 'both' = grey of brightness n at strength a, 'dark' = black at strength n * a
                     gl_FragColor = u_both > 0.5 ? vec4(vec3(n * a), a) : vec4(0.0, 0.0, 0.0, n * a);
                 }`;
             const compile = (type, src) => {
@@ -328,7 +337,6 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
             if (still) return;
             let last = 0;
             const frame = (now) => {
-                // no point drawing once the background has faded out
                 if (now - last >= 1000 / G.fps && lastFade > 0.001) { last = now; draw(); }
                 requestAnimationFrame(frame);
             };
