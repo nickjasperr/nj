@@ -17,7 +17,7 @@
     ================================================================ */
     const ALBUMS = {
         the: {
-            tabs: ['context', 'samples', 'cover', 'listen'],
+            tabs: ['context', 'cover', 'listen'],
             editions: {
                 youtube: [
                     {

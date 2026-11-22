@@ -188,6 +188,12 @@
             transition: opacity var(--fade, 0.8s) linear;
         }
 
+        /* leaving because the next line has started (not because you scrolled back): data-fade-out (seconds) if the
+           line has one, else the same as the fade in */
+        .line[data-mode="trigger"][data-leave="next"] {
+            transition-duration: var(--fade-out, var(--fade, 0.8s));
+        }
+
         .line[data-mode="trigger"].shown {
             opacity: 1;
         }
@@ -281,8 +287,8 @@
             text-align: center;
         }
 
-        #l5 { --chars: 39; }
-        #l6 { --chars: 52; }
+        #l5 { --chars: 43; }
+        #l6 { --chars: 46; }
 
         /* 8, 9  vertically centred, left aligned. 8 keeps its line breaks. */
         #l8, #l9 {
@@ -374,7 +380,7 @@
                     data-hold ("stay" = never leaves, a number = stays that long instead of leaving when the next comes in),
                     data-out (how long it takes to leave),
                     data-sync="fadeOut" (comes in exactly while the background fades out, ignores data-at / data-len),
-                    data-mode="trigger" (switched on / off by position instead of scrolled, fades by time; data-until, data-fade),
+                    data-mode="trigger" (switched on / off by position instead of scrolled, fades by time; data-until, data-fade, data-fade-out),
                     data-veil="0.2" (a black cover at that opacity comes and goes with the line)
          Placement and colour are in the STYLE above, by id.
     ============================================================ -->
@@ -390,13 +396,12 @@
         <!-- not scrolled: on at 4.5 (= when 3 has left the screen), off when 5 starts (or if you scroll back above 4.5) -->
         <p class="line fit" id="l4" data-at="4.5" data-mode="trigger">I had recently discovered Lil Peep,<br>and with him, The Microphones.</p>
 
-        <!-- 5 and 6: instant (data-len="0"), 6 replaces 5 with no gap -->
-        <p class="line fit" id="l5" data-at="5.9" data-len="0">I brought my dad's electric guitar (no amp)</p>
+        <!-- 5: fades in at the same time as 4 fades out (both by time, same speed). It leaves instantly (data-fade-out="0")
+             because 6 replaces it with no gap -->
+        <p class="line fit" id="l5" data-at="5.9" data-mode="trigger" data-fade-out="0">I brought my dad's electric guitar (no amp)</p>
 
-        <p class="line fit" id="l6" data-at="6.9" data-len="0">I remember playing Headless Horseman alone<br>many nights in my room and in the living room.</p>
-
-        <!-- instant, with a 20% black cover over the picture; both fade away together as 8 comes in -->
-        <p class="line" id="l7" data-at="8.3" data-len="0" data-veil="0.2">I felt meaning.</p>
+        <!-- 6: instant in, stays 1.8, fades out over 0.4 (ends at 9.1), and only then does 8 start fading in -->
+        <p class="line fit" id="l6" data-at="6.9" data-len="0" data-hold="1.8" data-out="0.4">I remember playing Headless Horseman alone<br>many nights in my room and in the living room.</p>
 
         <!-- fades in, then is replaced instantly by 9 (data-out="0") -->
         <p class="line fit" id="l8" data-at="9.1" data-out="0">I slept in a room on the<br>second story with three beds:<br>one twin by the window,<br>another by the wall,<br>and a double in the center.</p>
@@ -411,9 +416,9 @@
         <!-- crosses the screen right to left over 2 units, following the path in the picture (see "drift" in the STYLE) -->
         <p class="line" id="l12" data-at="14.4" data-len="2" data-anim="drift" data-ease="linear" data-hold="stay">This vacation, I believe, forever changed the path I'd take.</p>
 
-        <p class="line" id="l13" data-at="16.1">Before it, I was lost, not knowing what I liked, who I wanted to be, what I wanted to look forward to in life.</p>
+        <p class="line" id="l13" data-at="16.1">Before it, I was lost, not knowing what I liked, what I wanted to look forward to in life.</p>
 
-        <p class="line" id="l14" data-sync="fadeOut" data-anim="type" data-ease="linear">That vacation, I found out.</p>
+        <p class="line" id="l14" data-sync="fadeOut" data-anim="type" data-ease="linear">With it, I found myself.</p>
     </div>
 
     <div class="track" id="track"></div>

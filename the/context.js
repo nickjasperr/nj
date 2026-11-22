@@ -68,6 +68,7 @@ const CONFIG = {
 
     // Lines with data-mode="trigger" don't follow the scroll: they switch on at their data-at and off when the next
     // line starts (or at data-until), and fade by TIME, this many seconds, whatever you do with the scroll.
+    // data-fade="0.5" changes it for one line, data-fade-out="0" is only for when it leaves because the next line started.
     trigger: { fade: 0.8 },
 
     // Scroll feel for this page only, on top of the site's settings (see LENIS in script.js).
@@ -143,7 +144,10 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
             el.dataset.anim = anim;
             if (anim === 'words' || anim === 'type') split(el, anim);
             const mode = el.dataset.mode || 'scroll';
-            if (mode === 'trigger') el.style.setProperty('--fade', num(el, 'fade', CONFIG.trigger.fade) + 's');
+            if (mode === 'trigger') {
+                el.style.setProperty('--fade', num(el, 'fade', CONFIG.trigger.fade) + 's');
+                if (el.dataset.fadeOut !== undefined) el.style.setProperty('--fade-out', num(el, 'fadeOut', CONFIG.trigger.fade) + 's');
+            }
             return {
                 el, at, len, mode,
                 veil: num(el, 'veil', 0),                    // data-veil="0.2": a black cover at 20% comes with this line
@@ -217,7 +221,12 @@ window.PAGE = { lenis: CONFIG.lenis };      // read by page.js when it starts th
             for (const l of lines) {
                 if (l.mode === 'trigger') {
                     const on = pos >= l.at && pos < l.until;
-                    if (on !== l.on) { l.on = on; l.el.classList.toggle('shown', on); }
+                    if (on !== l.on) {
+                        l.on = on;
+                        // leaving because the next line started (not because you scrolled back) can have its own speed
+                        l.el.dataset.leave = (!on && pos >= l.until) ? 'next' : 'back';
+                        l.el.classList.toggle('shown', on);
+                    }
                     continue;
                 }
                 const pin = ease(l.ease, range(pos, l.at, l.at + l.len));
